@@ -106,9 +106,12 @@ Successfully set up EigenLayer Actively Validated Services (AVS) contracts for t
 - Emergency pause functionality on both contracts
 - Prevents new registrations and task operations during incidents
 
-### 3. Signature Verification
-- ECDSA signature verification for all operator responses
+### 3. Signature Verification (ECDSA)
+- **Production-ready ECDSA signatures** for operator response verification
+- Each operator signs: `keccak256(abi.encodePacked(taskIndex, responseData))`
+- Smart contract verifies using `ecrecover` to ensure authenticity
 - Prevents impersonation and unauthorized task responses
+- **Note**: BLS signature aggregation available as future upgrade (see [BLS_UPGRADE_PATH.md](BLS_UPGRADE_PATH.md))
 
 ### 4. Upgradeable Pattern
 - Uses OpenZeppelin's upgradeable contracts
