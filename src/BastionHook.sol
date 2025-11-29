@@ -12,6 +12,7 @@ import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "@uniswap/v4-core/src/type
 
 import {IVolatilityOracle} from "./interfaces/IVolatilityOracle.sol";
 import {InsuranceTranche} from "./InsuranceTranche.sol";
+import {LendingModule} from "./LendingModule.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -93,6 +94,9 @@ contract BastionHook is BaseHook {
 
     /// @notice Insurance tranche for depeg protection
     InsuranceTranche public insuranceTranche;
+
+    /// @notice Lending module for LP-collateralized borrowing
+    LendingModule public lendingModule;
 
     /// @notice Insurance premium split in basis points (5-20% of swap fees)
     uint256 public insuranceSplit;
@@ -270,34 +274,61 @@ contract BastionHook is BaseHook {
     }
 
     /// @notice Hook called after liquidity is added to a pool
+    /// @dev LPs must manually register collateral via registerLPCollateral()
+    /// @param sender Address providing liquidity
     /// @param key The pool key
+    /// @param params Liquidity modification parameters
+    /// @param delta Balance delta from liquidity addition
     /// @return selector The function selector
     /// @return hookDelta The delta to apply after adding liquidity
     function _afterAddLiquidity(
-        address,
+        address sender,
         PoolKey calldata key,
-        ModifyLiquidityParams calldata,
-        BalanceDelta,
+        ModifyLiquidityParams calldata params,
+        BalanceDelta delta,
         BalanceDelta,
         bytes calldata
     ) internal override returns (bytes4, BalanceDelta) {
-        // TODO: Implement liquidity addition tracking logic
+        // Note: Automatic registration is not possible because sender is PositionManager
+        // LPs must manually call registerLPCollateral() after adding liquidity
         return (BaseHook.afterAddLiquidity.selector, BalanceDelta.wrap(0));
     }
 
+    /// @notice Manually register LP collateral for borrowing
+    /// @dev Must be called by LP after adding liquidity
+    /// @param lpTokenAmount Amount of LP tokens to register as collateral
+    /// @param collateralValue USD value of the collateral
+    function registerLPCollateral(uint256 lpTokenAmount, uint256 collateralValue) external {
+        require(address(lendingModule) != address(0), "BastionHook: lending module not set");
+        require(lpTokenAmount > 0, "BastionHook: zero amount");
+        require(collateralValue > 0, "BastionHook: zero value");
+
+        // Register caller's collateral
+        lendingModule.registerCollateral(
+            msg.sender,
+            address(this), // lpToken address (using hook as proxy)
+            lpTokenAmount,
+            collateralValue
+        );
+    }
+
     /// @notice Hook called after liquidity is removed from a pool
+    /// @dev Note: Cannot enforce debt check here because sender is PositionManager
+    ///      LPs must use LendingModule.withdrawCollateral() to access their collateral
+    /// @param sender Address removing liquidity
     /// @param key The pool key
     /// @return selector The function selector
     /// @return hookDelta The delta to apply after removing liquidity
     function _afterRemoveLiquidity(
-        address,
+        address sender,
         PoolKey calldata key,
         ModifyLiquidityParams calldata,
         BalanceDelta,
         BalanceDelta,
         bytes calldata
     ) internal override returns (bytes4, BalanceDelta) {
-        // TODO: Implement liquidity removal tracking logic
+        // Cannot check debt here because sender is PositionManager, not actual LP
+        // Debt enforcement happens in LendingModule.withdrawCollateral()
         return (BaseHook.afterRemoveLiquidity.selector, BalanceDelta.wrap(0));
     }
 
@@ -568,6 +599,28 @@ contract BastionHook is BaseHook {
         insuranceSplit = _insuranceSplit;
 
         emit InsuranceSplitUpdated(oldSplit, _insuranceSplit);
+    }
+
+    /// @notice Set lending module contract
+    /// @param _lendingModule Lending module address
+    function setLendingModule(address _lendingModule) external onlyOwner {
+        require(_lendingModule != address(0), "BastionHook: zero address");
+        lendingModule = LendingModule(_lendingModule);
+    }
+
+    /// @notice Calculate collateral value from balance delta
+    /// @param delta Balance delta from liquidity operation
+    /// @return value Estimated collateral value
+    function _calculateCollateralValue(BalanceDelta delta) internal pure returns (uint256 value) {
+        // Simple calculation: sum of absolute values of both token amounts
+        // In production, this would use price oracles to get USD value
+        int128 amount0 = delta.amount0();
+        int128 amount1 = delta.amount1();
+
+        uint256 absAmount0 = amount0 >= 0 ? uint256(int256(amount0)) : uint256(int256(-amount0));
+        uint256 absAmount1 = amount1 >= 0 ? uint256(int256(amount1)) : uint256(int256(-amount1));
+
+        value = absAmount0 + absAmount1;
     }
 
     /// @notice Transfer ownership
