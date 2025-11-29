@@ -11,12 +11,16 @@ import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
 
 import {IVolatilityOracle} from "./interfaces/IVolatilityOracle.sol";
+import {InsuranceTranche} from "./InsuranceTranche.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /// @title BastionHook
-/// @notice A Uniswap v4 hook with dynamic fees and liquidity/swap tracking
+/// @notice A Uniswap v4 hook with dynamic fees, basket rebalancing, and insurance integration
 contract BastionHook is BaseHook {
     using PoolIdLibrary for PoolKey;
+    using SafeERC20 for IERC20;
 
     // -----------------------------------------------
     // Structs
@@ -74,12 +78,30 @@ contract BastionHook is BaseHook {
     /// @notice Basis points constant for percentage calculations
     uint256 public constant BASIS_POINTS = 10000;
 
+    /// @notice Minimum insurance split: 5% = 500 basis points
+    uint256 public constant MIN_INSURANCE_SPLIT = 500;
+
+    /// @notice Maximum insurance split: 20% = 2000 basis points
+    uint256 public constant MAX_INSURANCE_SPLIT = 2000;
+
     // -----------------------------------------------
     // State Variables
     // -----------------------------------------------
 
     /// @notice The volatility oracle used to determine dynamic fees
     IVolatilityOracle public immutable volatilityOracle;
+
+    /// @notice Insurance tranche for depeg protection
+    InsuranceTranche public insuranceTranche;
+
+    /// @notice Insurance premium split in basis points (5-20% of swap fees)
+    uint256 public insuranceSplit;
+
+    /// @notice Premium token used for insurance payments
+    IERC20 public premiumToken;
+
+    /// @notice Owner/admin address
+    address public owner;
 
     /// @notice Target basket configuration per pool
     mapping(PoolId => BasketConfig) public basketConfigs;
@@ -92,6 +114,9 @@ contract BastionHook is BaseHook {
 
     /// @notice Accumulated fees from donations (rebasing tokens) per pool per currency
     mapping(PoolId => mapping(Currency => uint256)) public accumulatedDonations;
+
+    /// @notice Accumulated swap fees available for insurance premiums per pool
+    mapping(PoolId => uint256) public accumulatedFees;
 
     // -----------------------------------------------
     // Enums
@@ -119,6 +144,24 @@ contract BastionHook is BaseHook {
     /// @notice Emitted when basket deviation exceeds threshold
     event RebalanceTriggered(PoolId indexed poolId, uint256 maxDeviation);
 
+    /// @notice Emitted when insurance premium is collected
+    event InsurancePremiumCollected(PoolId indexed poolId, uint256 premium, uint256 remainingFees);
+
+    /// @notice Emitted when insurance split is updated
+    event InsuranceSplitUpdated(uint256 oldSplit, uint256 newSplit);
+
+    /// @notice Emitted when insurance tranche is set
+    event InsuranceTrancheSet(address indexed tranche);
+
+    // -----------------------------------------------
+    // Modifiers
+    // -----------------------------------------------
+
+    modifier onlyOwner() {
+        require(msg.sender == owner, "BastionHook: caller is not owner");
+        _;
+    }
+
     // -----------------------------------------------
     // Constructor
     // -----------------------------------------------
@@ -128,6 +171,8 @@ contract BastionHook is BaseHook {
     /// @param _volatilityOracle The volatility oracle contract
     constructor(IPoolManager _poolManager, IVolatilityOracle _volatilityOracle) BaseHook(_poolManager) {
         volatilityOracle = _volatilityOracle;
+        owner = msg.sender;
+        insuranceSplit = 1000; // Default 10%
     }
 
     // -----------------------------------------------
@@ -199,7 +244,7 @@ contract BastionHook is BaseHook {
     function _afterSwap(
         address,
         PoolKey calldata key,
-        SwapParams calldata,
+        SwapParams calldata params,
         BalanceDelta delta,
         bytes calldata
     ) internal override returns (bytes4, int128) {
@@ -207,6 +252,12 @@ contract BastionHook is BaseHook {
 
         // Update basket state based on swap delta
         _updateBasketState(poolId, key, delta);
+
+        // Accumulate swap fees for insurance premiums
+        // Fee is calculated based on the swap amount
+        if (address(insuranceTranche) != address(0) && address(premiumToken) != address(0)) {
+            _accumulateSwapFees(poolId, params);
+        }
 
         // Check if rebalancing is needed
         (bool shouldRebalance, uint256 maxDeviation) = _shouldRebalance(poolId);
@@ -437,5 +488,92 @@ contract BastionHook is BaseHook {
     /// @param assetType The asset type
     function setAssetType(Currency currency, AssetType assetType) external {
         assetTypes[currency] = assetType;
+    }
+
+    /// @notice Accumulate swap fees for insurance premiums
+    /// @param poolId The pool ID
+    /// @param params The swap parameters
+    function _accumulateSwapFees(PoolId poolId, SwapParams calldata params) internal {
+        // Estimate fee from swap amount (simplified - in production would track actual fees)
+        uint256 swapAmount = params.amountSpecified > 0
+            ? uint256(int256(params.amountSpecified))
+            : uint256(int256(-params.amountSpecified));
+
+        // Approximate fee based on current volatility tier
+        uint256 estimatedFee = (swapAmount * MEDIUM_VOLATILITY_FEE) / 1000000; // Simplified
+
+        accumulatedFees[poolId] += estimatedFee;
+    }
+
+    /// @notice Collect accumulated premiums and send to insurance tranche
+    /// @param poolId The pool ID
+    function collectInsurancePremium(PoolId poolId) external {
+        require(address(insuranceTranche) != address(0), "BastionHook: insurance not set");
+        require(address(premiumToken) != address(0), "BastionHook: premium token not set");
+
+        uint256 totalFees = accumulatedFees[poolId];
+        require(totalFees > 0, "BastionHook: no fees to collect");
+
+        // Calculate insurance premium
+        uint256 premium = (totalFees * insuranceSplit) / BASIS_POINTS;
+        uint256 remainingFees = totalFees - premium;
+
+        // Reset accumulated fees
+        accumulatedFees[poolId] = 0;
+
+        // Transfer premium to insurance tranche
+        if (premium > 0) {
+            premiumToken.forceApprove(address(insuranceTranche), premium);
+            insuranceTranche.collectPremiumWithToken(address(premiumToken), premium);
+        }
+
+        emit InsurancePremiumCollected(poolId, premium, remainingFees);
+    }
+
+    /// @notice Keeper function to check for depegs and trigger payouts
+    /// @dev Can be called by anyone (keepers, bots, etc.)
+    /// @return assetsDepegged Array of depegged asset addresses
+    /// @dev Only detects depegs. Payout execution must be done separately by insurance owner.
+    function checkAndExecuteDepegPayouts() external view returns (address[] memory assetsDepegged) {
+        require(address(insuranceTranche) != address(0), "BastionHook: insurance not set");
+
+        // Check all configured assets for depeg
+        assetsDepegged = insuranceTranche.checkAllAssets();
+
+        return assetsDepegged;
+    }
+
+    /// @notice Set insurance tranche contract
+    /// @param _insuranceTranche Insurance tranche address
+    function setInsuranceTranche(address _insuranceTranche) external onlyOwner {
+        require(_insuranceTranche != address(0), "BastionHook: zero address");
+        insuranceTranche = InsuranceTranche(_insuranceTranche);
+        emit InsuranceTrancheSet(_insuranceTranche);
+    }
+
+    /// @notice Set premium token for insurance payments
+    /// @param _premiumToken Premium token address
+    function setPremiumToken(address _premiumToken) external onlyOwner {
+        require(_premiumToken != address(0), "BastionHook: zero address");
+        premiumToken = IERC20(_premiumToken);
+    }
+
+    /// @notice Set insurance split percentage
+    /// @param _insuranceSplit Insurance split in basis points (500-2000)
+    function setInsuranceSplit(uint256 _insuranceSplit) external onlyOwner {
+        require(_insuranceSplit >= MIN_INSURANCE_SPLIT, "BastionHook: split too low");
+        require(_insuranceSplit <= MAX_INSURANCE_SPLIT, "BastionHook: split too high");
+
+        uint256 oldSplit = insuranceSplit;
+        insuranceSplit = _insuranceSplit;
+
+        emit InsuranceSplitUpdated(oldSplit, _insuranceSplit);
+    }
+
+    /// @notice Transfer ownership
+    /// @param newOwner New owner address
+    function transferOwnership(address newOwner) external onlyOwner {
+        require(newOwner != address(0), "BastionHook: zero address");
+        owner = newOwner;
     }
 }
