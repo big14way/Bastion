@@ -11,8 +11,17 @@ out/
 # Docs
 docs/
 
-# Dotenv file
+# Environment files - NEVER COMMIT THESE
 .env
+.env.local
+.env.*.local
+*.env
+
+# Private keys and secrets
+*.key
+*.pem
+private/
+secrets/
 
 # Node modules
 node_modules/
@@ -22,3 +31,20 @@ lib/
 
 # Lock file
 foundry.lock
+
+# Deployment artifacts (may contain sensitive data)
+deployments/*.json
+broadcast/
+
+# Frontend environment
+frontend/.env
+frontend/.env.local
+frontend/.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store

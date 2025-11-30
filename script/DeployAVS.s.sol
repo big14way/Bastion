@@ -34,13 +34,22 @@ contract DeployAVS is Script {
 
         vm.startBroadcast(deployerPrivateKey);
 
-        // Step 1: Deploy BastionTaskManager
-        taskManager = address(new BastionTaskManager());
-        console2.log("BastionTaskManager:", taskManager);
-
-        // Step 2: Deploy BastionServiceManager
+        // Step 1: Deploy BastionServiceManager first
         serviceManager = deployServiceManager();
         console2.log("BastionServiceManager:", serviceManager);
+
+        // Step 2: Deploy BastionTaskManager with ServiceManager reference
+        BastionTaskManager tm = new BastionTaskManager();
+        taskManager = address(tm);
+
+        // Initialize TaskManager with ServiceManager
+        tm.initialize(
+            serviceManager,
+            7200,  // taskTimeoutBlocks: ~1 day on Base (~12s blocks)
+            6700,  // minimumQuorumPercentage: 67%
+            msg.sender  // owner
+        );
+        console2.log("BastionTaskManager:", taskManager);
 
         // Step 3: Link contracts
         linkContracts();
@@ -92,12 +101,11 @@ contract DeployAVS is Script {
     }
 
     function deployServiceManager() internal returns (address) {
-        // Deploy with EigenLayer integration
-        BastionServiceManager sm = new BastionServiceManager(
-            avsDirectory,
-            registryCoordinator,
-            stakeRegistry
-        );
+        // Deploy upgradeable contract
+        BastionServiceManager sm = new BastionServiceManager();
+
+        // Initialize with minimal stake of 1 ETH
+        sm.initialize(avsDirectory, 1 ether, msg.sender);
 
         return address(sm);
     }
@@ -126,13 +134,11 @@ contract DeployAVS is Script {
         BastionServiceManager(serviceManager).setTaskManager(taskManager);
         console2.log("TaskManager set in ServiceManager");
 
-        // Set ServiceManager in TaskManager
-        BastionTaskManager(taskManager).setServiceManager(serviceManager);
-        console2.log("ServiceManager set in TaskManager");
+        // ServiceManager is already set in TaskManager during initialization
+        console2.log("ServiceManager already set in TaskManager via initialize()");
 
-        // Set InsuranceTranche in TaskManager
-        BastionTaskManager(taskManager).setInsuranceTranche(insuranceTranche);
-        console2.log("InsuranceTranche set in TaskManager");
+        // Note: InsuranceTranche integration happens at the protocol layer,
+        // not in the AVS contracts directly
     }
 
     function saveAVSDeployment() internal {

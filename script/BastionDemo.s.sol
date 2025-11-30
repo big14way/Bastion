@@ -144,7 +144,7 @@ contract BastionDemo is Script {
 
         // Deploy pool manager
         console.log("\nDeploying Uniswap v4 Pool Manager...");
-        poolManager = new PoolManager();
+        poolManager = new PoolManager(address(this));
         console.log("  Pool Manager:", address(poolManager));
 
         // Deploy Bastion hook
@@ -170,7 +170,7 @@ contract BastionDemo is Script {
 
         // Deploy lending module
         console.log("\nDeploying Lending Module...");
-        lendingModule = new LendingModule(address(bastionHook));
+        lendingModule = new LendingModule(address(bastionHook), address(USDe), 500); // 5% interest rate
         bastionHook.setLendingModule(address(lendingModule));
         console.log("  Lending Module:", address(lendingModule));
 
@@ -330,7 +330,7 @@ contract BastionDemo is Script {
         console.log("  Loan completed successfully!");
     }
 
-    function makeAddr(string memory name) internal returns (address) {
+    function makeAddr(string memory name) internal override returns (address) {
         return address(uint160(uint256(keccak256(abi.encodePacked(name)))));
     }
 }
