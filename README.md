@@ -1,103 +1,150 @@
-# Bastion Protocol
+# 🛡️ Bastion Protocol
 
-**A comprehensive DeFi infrastructure suite built on Uniswap v4 with dynamic fees, basket management, and depeg insurance**
+**Automated DeFi insurance powered by Uniswap V4 Hooks and EigenLayer AVS**
 
-## Overview
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Solidity](https://img.shields.io/badge/Solidity-^0.8.24-blue)](https://soliditylang.org/)
+[![Foundry](https://img.shields.io/badge/Built%20with-Foundry-orange)](https://book.getfoundry.sh/)
 
-Bastion Protocol is a sophisticated DeFi platform that combines three core components:
+## 🎯 Overview
 
-1. **BastionHook** - Uniswap v4 hook with volatility-based dynamic fees and basket rebalancing
-2. **BastionVault** - ERC-4626 tokenized vault wrapper for multi-asset baskets
-3. **InsuranceTranche** - Chainlink-powered depeg protection for basket assets
+Bastion is a **multi-asset basket protocol** that protects liquidity providers from depeg events using **automated insurance** powered by **EigenLayer AVS**.
 
-## Core Features
+### Key Features
 
-### 1. Dynamic Fee System (BastionHook)
-- **Volatility-based fee adjustment**: Automatically adjusts swap fees based on market conditions
-  - Low volatility (< 10%): 0.05% fee
-  - Medium volatility (10-14%): 0.30% fee
-  - High volatility (≥ 14%): 1.00% fee
-- **Oracle integration**: Uses IVolatilityOracle for real-time volatility data
+- **🔄 Dynamic Fees** (0.05% - 1.00%) based on market volatility
+- **🛡️ Automated Insurance** with 20% depeg threshold detection
+- **⚡ EigenLayer AVS** for decentralized depeg verification
+- **💰 Pro-Rata Payouts** distributed fairly to affected LPs
+- **🏦 LP Collateralization** for borrowing against basket positions
+- **📊 Real-Time Dashboard** with interactive demo mode
 
-### 2. Basket Management
-- **Multi-asset support**: stETH, cbETH, rETH, USDe
-- **Configurable weights**: Target allocations in basis points (10000 = 100%)
-- **Auto-rebalancing**: 5% deviation threshold triggers rebalancing
-- **Rebasing token support**: Donation tracking for tokens like stETH
+## 🚀 Quick Start
 
-### 3. ERC-4626 Vault (BastionVault)
-- **Standard compliance**: Full ERC-4626 tokenized vault implementation
-- **Deposit/withdrawal**: With configurable fees (max 10%)
-- **Basket tracking**: Monitors underlying multi-asset basket value
-- **Pro-rata shares**: Issues vault tokens proportional to deposits
-- **Max 10 assets**: Supports up to 10 different basket assets
-
-### 4. Depeg Insurance (InsuranceTranche)
-- **Chainlink price feeds**: Real-time asset price monitoring
-- **20% depeg threshold**: Configurable per-asset deviation limits
-- **Premium collection**: Portion of swap fees fund insurance pool
-- **Pro-rata payouts**: Distributes insurance pool to affected LPs
-- **Stale price protection**: 2-hour maximum price age validation
-- **Emergency controls**: Pause mechanism and emergency withdrawal
-
-## Installation
+### Frontend Demo (3 steps)
 
 ```bash
-# Clone the repository
+# 1. Install dependencies
+cd frontend && npm install
+
+# 2. Start development server
+npm run dev
+
+# 3. Open http://localhost:3000 and click "Enable Demo Mode"
+```
+
+See [QUICK_START.md](QUICK_START.md) for detailed demo instructions.
+
+### Smart Contract Deployment
+
+```bash
+# 1. Setup environment
+cp .env.example .env
+# Edit .env with your PRIVATE_KEY and RPC URLs
+
+# 2. Deploy to Base Sepolia
+forge script script/DeployBastion.s.sol \
+  --rpc-url $BASE_SEPOLIA_RPC_URL \
+  --broadcast \
+  --verify
+
+# 3. Deploy AVS contracts
+forge script script/DeployAVS.s.sol \
+  --rpc-url $BASE_SEPOLIA_RPC_URL \
+  --broadcast
+
+# 4. Verify contracts
+forge script script/VerifyContracts.s.sol
+```
+
+## 📦 What's Included
+
+### Smart Contracts
+
+| Contract | Description | Status |
+|----------|-------------|--------|
+| [BastionHook.sol](src/BastionHook.sol) | Uniswap V4 hook with dynamic fees | ✅ Complete |
+| [InsuranceTranche.sol](src/InsuranceTranche.sol) | Insurance premium collection & payouts | ✅ Complete |
+| [LendingModule.sol](src/LendingModule.sol) | LP token collateralization | ✅ Complete |
+| [BastionVault.sol](src/BastionVault.sol) | ERC-4626 multi-asset vault | ✅ Complete |
+| [VolatilityOracle.sol](src/VolatilityOracle.sol) | Volatility data provider | ✅ Complete |
+| [BastionServiceManager.sol](src/avs/BastionServiceManager.sol) | EigenLayer AVS service | ✅ Complete |
+| [BastionTaskManager.sol](src/avs/BastionTaskManager.sol) | Depeg verification tasks | ✅ Complete |
+
+### Frontend Application
+
+| Page | Description | Features |
+|------|-------------|----------|
+| [Dashboard](frontend/app/page.tsx) | Main overview | Real-time data, demo mode |
+| [Vault](frontend/app/vault/page.tsx) | Deposit/Withdraw | ERC-4626 interface |
+| [Borrow](frontend/app/borrow/page.tsx) | LP Borrowing | Health factor, LTV |
+| [Insurance](frontend/app/insurance/page.tsx) | Coverage Status | Claims, premiums |
+
+### Demo Mode
+
+**🎮 Interactive Hackathon Demo**
+- One-click activation
+- 25% stETH depeg simulation
+- 4 AVS operators with real-time verification
+- Before/After LP balance comparison
+- Insurance payout visualization
+- Live event timeline
+
+See [frontend/DEMO_MODE.md](frontend/DEMO_MODE.md) for presentation guide.
+
+## 🏗️ Architecture
+
+```
+┌─────────────────────────────────────────────────────┐
+│                   Frontend (Next.js)                │
+│  ┌─────────────┐  ┌──────────┐  ┌───────────────┐  │
+│  │  Dashboard  │  │  Vault   │  │     Borrow    │  │
+│  │  + Demo     │  │          │  │               │  │
+│  └─────────────┘  └──────────┘  └───────────────┘  │
+└────────────┬────────────────────────────────────────┘
+             │ wagmi / viem
+             ▼
+┌─────────────────────────────────────────────────────┐
+│              Smart Contracts (Solidity)             │
+│  ┌─────────────┐  ┌──────────┐  ┌───────────────┐  │
+│  │BastionHook  │  │Insurance │  │    Lending    │  │
+│  │(Dynamic Fee)│  │ Tranche  │  │    Module     │  │
+│  └─────────────┘  └──────────┘  └───────────────┘  │
+└────────────┬────────────────────────────────────────┘
+             │
+             ▼
+┌─────────────────────────────────────────────────────┐
+│          EigenLayer AVS (Depeg Verification)        │
+│  ┌─────────────┐  ┌──────────┐  ┌───────────────┐  │
+│  │  Service    │  │   Task   │  │   Operator    │  │
+│  │  Manager    │  │ Manager  │  │   Service     │  │
+│  └─────────────┘  └──────────┘  └───────────────┘  │
+└─────────────────────────────────────────────────────┘
+```
+
+## 💻 Development
+
+### Prerequisites
+
+- [Foundry](https://book.getfoundry.sh/getting-started/installation)
+- [Node.js](https://nodejs.org/) v18+
+- [Git](https://git-scm.com/)
+
+### Installation
+
+```bash
+# Clone repository
 git clone https://github.com/big14way/Bastion.git
 cd Bastion
 
-# Install dependencies
+# Install Solidity dependencies
 forge install
 
-# Run tests
-forge test
+# Install frontend dependencies
+cd frontend && npm install
 ```
 
-## Project Structure
-
-```
-src/
-├── BastionHook.sol              # Uniswap v4 hook with dynamic fees
-├── BastionVault.sol             # ERC-4626 tokenized vault
-├── InsuranceTranche.sol         # Chainlink-powered depeg insurance
-├── interfaces/
-│   └── IVolatilityOracle.sol    # Volatility oracle interface
-└── mocks/
-    └── MockVolatilityOracle.sol # Mock oracle for testing
-
-test/
-├── BastionHook.t.sol            # Hook tests (7 tests)
-├── BastionVault.t.sol           # Vault tests (20 tests)
-└── InsuranceTranche.t.sol       # Insurance tests (23 tests)
-```
-
-## Testing
-
-The project includes a comprehensive test suite with **58 total tests**:
-
-### BastionHook Tests (7 tests)
-- Low, medium, and high volatility fee scenarios
-- Fee updates when volatility changes
-- Boundary condition testing
-- Edge cases (zero and extreme volatility)
-
-### BastionVault Tests (20 tests)
-- Basic deposit/withdraw functionality
-- Fee calculation and distribution
-- Basket asset management
-- Multi-user scenarios
-- Preview and conversion functions
-- Edge cases and validation
-
-### InsuranceTranche Tests (23 tests)
-- Premium collection from swap fees
-- Depeg detection with Chainlink oracles
-- Payout execution to affected LPs
-- LP position management
-- Stale price detection
-- Emergency pause and withdrawal
-- Asset configuration and activation
+### Testing
 
 ```bash
 # Run all tests
@@ -106,148 +153,271 @@ forge test
 # Run with verbosity
 forge test -vv
 
-# Run specific test
-forge test --match-test testLowVolatilityFee
+# Run specific test file
+forge test --match-path test/BastionHook.t.sol
+
+# Generate gas report
+forge test --gas-report
+
+# Generate coverage
+forge coverage
 ```
 
-## Configuration Examples
+### Build
 
-### 1. Configure BastionHook Basket Weights
+```bash
+# Build contracts
+forge build
 
-```solidity
-// Set target basket allocation
-BastionHook.BasketConfig memory config = BastionHook.BasketConfig({
-    stETHWeight: 4000,  // 40%
-    cbETHWeight: 3000,  // 30%
-    rETHWeight: 2000,   // 20%
-    USDeWeight: 1000    // 10%
-});
-
-bastionHook.setBasketConfig(poolId, config);
-
-// Map currencies to asset types
-bastionHook.setAssetType(Currency.wrap(stETHAddress), BastionHook.AssetType.STETH);
-bastionHook.setAssetType(Currency.wrap(cbETHAddress), BastionHook.AssetType.CBETH);
+# Build frontend
+cd frontend && npm run build
 ```
 
-### 2. Configure BastionVault
+## 📚 Documentation
+
+### Core Documentation
+
+- [QUICK_START.md](QUICK_START.md) - Get started in 3 steps
+- [SUMMARY.md](SUMMARY.md) - Complete project summary
+- [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) - 100% completion verification
+
+### Frontend Documentation
+
+- [frontend/README.md](frontend/README.md) - Frontend setup
+- [frontend/DEMO_MODE.md](frontend/DEMO_MODE.md) - Demo presentation guide
+
+### Technical Documentation
+
+- [AVS_IMPLEMENTATION_SUMMARY.md](AVS_IMPLEMENTATION_SUMMARY.md) - EigenLayer AVS integration
+- [BLS_UPGRADE_PATH.md](BLS_UPGRADE_PATH.md) - Future BLS signature upgrade
+
+## 🚢 Deployment
+
+### Deployment Scripts
+
+| Script | Purpose |
+|--------|---------|
+| [DeployBastion.s.sol](script/DeployBastion.s.sol) | Deploy core protocol |
+| [DeployAVS.s.sol](script/DeployAVS.s.sol) | Deploy AVS contracts |
+| [VerifyContracts.s.sol](script/VerifyContracts.s.sol) | Verify on explorer |
+
+### Deployment Process
+
+1. **Setup Environment**
+   ```bash
+   cp .env.example .env
+   # Add PRIVATE_KEY, RPC URLs, API keys
+   ```
+
+2. **Deploy Core Contracts**
+   ```bash
+   forge script script/DeployBastion.s.sol \
+     --rpc-url base-sepolia \
+     --broadcast \
+     --verify
+   ```
+
+   This will:
+   - Mine correct hook address with required flags
+   - Deploy BastionHook, InsuranceTranche, LendingModule, BastionVault
+   - Deploy mock tokens (stETH, cbETH, rETH, USDe, USDC)
+   - Initialize Uniswap V4 pool
+   - Save addresses to `deployments/{chainId}.json`
+
+3. **Deploy AVS Contracts**
+   ```bash
+   forge script script/DeployAVS.s.sol \
+     --rpc-url base-sepolia \
+     --broadcast
+   ```
+
+4. **Verify Contracts**
+   ```bash
+   forge script script/VerifyContracts.s.sol
+   # Follow the generated commands to verify each contract
+   ```
+
+5. **Update Frontend**
+   ```bash
+   # Copy addresses from deployments/{chainId}.json
+   # to frontend/lib/contracts/addresses.ts
+   ```
+
+### Supported Networks
+
+- **Base Sepolia** (84532) - Testnet ✅
+- **Base Mainnet** (8453) - Production
+- **Ethereum Sepolia** (11155111) - Testnet
+- **Ethereum Mainnet** (1) - Production
+
+## 🔧 Configuration
+
+### Dynamic Fee Configuration
 
 ```solidity
-// Deploy vault with base asset (e.g., USDC)
-BastionVault vault = new BastionVault(
-    IERC20(usdcAddress),
-    "Bastion Vault USDC",
-    "bvUSDC"
-);
+// Fee tiers based on volatility
+- Low volatility (< 10%): 0.05% fee
+- Medium volatility (10-14%): 0.30% fee
+- High volatility (≥ 14%): 1.00% fee
 
-// Add basket assets with weights
-vault.addBasketAsset(stETHAddress, 4000);  // 40%
-vault.addBasketAsset(cbETHAddress, 3000);  // 30%
-vault.addBasketAsset(rETHAddress, 2000);   // 20%
-vault.addBasketAsset(usdeAddress, 1000);   // 10%
-
-// Set fees (100 = 1%)
-vault.setFees(50, 100);  // 0.5% deposit, 1% withdrawal
+// Update volatility
+VolatilityOracle(oracle).updateVolatility(1200); // 12%
 ```
 
-### 3. Configure InsuranceTranche
+### Insurance Configuration
 
 ```solidity
-// Deploy insurance with authorized hook
-InsuranceTranche insurance = new InsuranceTranche(hookAddress);
+// Configure depeg threshold
+InsuranceTranche(insurance).setDepegThreshold(2000); // 20%
 
-// Configure asset with Chainlink price feed
-insurance.configureAsset(
-    stETHAddress,              // Asset token
-    stETHPriceFeedAddress,     // Chainlink price feed
-    1e8,                       // Target price (in feed decimals)
-    2000                       // 20% depeg threshold
-);
-
-// Hook collects premiums
-insurance.collectPremiumWithToken(usdcAddress, premiumAmount);
+// Collect premiums (20% of swap fees)
+BastionHook sends premiums automatically
 
 // Register LP positions
-insurance.updateLPPosition(lpAddress, sharesAmount);
+InsuranceTranche(insurance).updateLPPosition(lpAddress, shares);
 ```
 
-## Architecture
+### Lending Configuration
 
-### Component Integration Flow
+```solidity
+// Borrow limits
+- Max LTV: 70%
+- Liquidation threshold: 75%
+- Base interest rate: 5%
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    Uniswap v4 Pool                          │
-│                                                             │
-│  ┌───────────────────────────────────────────────────┐     │
-│  │           BastionHook (Hook Contract)              │     │
-│  │                                                    │     │
-│  │  • beforeSwap: Dynamic fee calculation            │     │
-│  │  • afterSwap: Basket rebalancing                  │     │
-│  │  • afterDonate: Rebasing token rewards            │     │
-│  │  • Collects premiums → InsuranceTranche           │     │
-│  └───────────────────────────────────────────────────┘     │
-└─────────────────────────────────────────────────────────────┘
-                          ↓
-          ┌───────────────┴────────────────┐
-          ↓                                ↓
-┌──────────────────────┐      ┌───────────────────────────┐
-│   BastionVault       │      │  InsuranceTranche         │
-│   (ERC-4626)         │      │  (Depeg Protection)       │
-│                      │      │                           │
-│  • Deposit/Withdraw  │      │  • Premium Collection     │
-│  • Basket Tracking   │      │  • Chainlink Oracles      │
-│  • Share Issuance    │      │  • Payout Distribution    │
-└──────────────────────┘      └───────────────────────────┘
+// Borrow against LP position
+LendingModule(lending).borrow(amount);
 ```
 
-### Hook Permissions (BastionHook)
-- `beforeSwap`: Dynamic fee calculation based on volatility
-- `afterSwap`: Basket state updates and rebalancing checks
-- `afterDonate`: Rebasing token reward accumulation
-- `afterAddLiquidity`: Liquidity tracking
-- `afterRemoveLiquidity`: Liquidity tracking
+## 🎯 Use Cases
 
-### Key Events
+### For Liquidity Providers
+1. Deposit assets into Bastion Vault
+2. Receive vault shares (ERC-4626)
+3. Automatic insurance against depegs
+4. Borrow against LP positions
+5. Earn swap fees from dynamic fee mechanism
 
-**BastionHook**
-- `RebalanceTriggered(poolId, maxDeviation)`: Rebalancing needed
-- `BasketRebalanced(poolId, timestamp)`: Rebalancing completed
-- `DonationReceived(poolId, currency, amount0, amount1)`: Rebasing rewards
+### For Protocols
+1. Integrate Bastion for basket exposure
+2. Leverage insurance for risk management
+3. Use vault shares as collateral
+4. Build on top of Uniswap V4 infrastructure
 
-**BastionVault**
-- `Deposit(caller, owner, assets, shares)`: Vault deposit
-- `Withdraw(caller, receiver, owner, assets, shares)`: Vault withdrawal
-- `AssetAdded(token, weight)`: Basket asset added
-- `FeesUpdated(depositFee, withdrawalFee)`: Fee configuration
+### For AVS Operators
+1. Register with EigenLayer
+2. Run Bastion operator service
+3. Verify depeg events
+4. Earn operator rewards
 
-**InsuranceTranche**
-- `PremiumCollected(from, amount, newBalance)`: Premium received
-- `DepegDetected(asset, price, targetPrice, deviation)`: Depeg event
-- `PayoutExecuted(asset, totalPayout, affectedLPs, price, deviation)`: Insurance payout
-- `LPPositionUpdated(lp, oldShares, newShares)`: LP position change
+## 🛠️ Technology Stack
 
-## Dependencies
+### Smart Contracts
+- **Solidity** ^0.8.24
+- **Foundry** - Development framework
+- **Uniswap V4** - Hooks & Pool Manager
+- **EigenLayer** - AVS framework
+- **OpenZeppelin** - Security libraries
 
-- **Solidity**: ^0.8.26
-- **Foundry**: Latest version
-- **Uniswap v4**: Core contracts and periphery
-- **OpenZeppelin**: Contracts and uniswap-hooks
-- **Chainlink**: Brownie contracts for price feeds
+### Frontend
+- **Next.js** 16 - React framework
+- **TypeScript** - Type safety
+- **Tailwind CSS** - Styling
+- **wagmi** 3.0 - Ethereum React hooks
+- **viem** 2.40 - TypeScript Ethereum client
+- **RainbowKit** - Wallet connection
 
-Install all dependencies:
-```bash
-forge install
-```
+### Infrastructure
+- **Chainlink** - Price oracles (future)
+- **The Graph** - Indexing (future)
+- **IPFS** - Decentralized storage (future)
 
-## License
+## 📊 Project Stats
 
-MIT
+- **Smart Contracts**: 7 core contracts
+- **Test Coverage**: 58 tests across 3 test files
+- **Frontend Pages**: 4 fully functional pages
+- **Custom Hooks**: 5 React hooks for blockchain data
+- **Lines of Code**: 2000+ Solidity, 1500+ TypeScript
 
-## Contributing
+## 🤝 Contributing
 
-Contributions are welcome! Please open an issue or submit a pull request.
+Contributions are welcome! Please see our contributing guidelines:
 
-## Security
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
-This is experimental software. Use at your own risk. Audit recommended before mainnet deployment.
+### Development Guidelines
+
+- Write tests for all new features
+- Follow Solidity style guide
+- Document all public functions
+- Run `forge fmt` before committing
+- Ensure all tests pass
+
+## 🔐 Security
+
+**⚠️ This is experimental software. Use at your own risk.**
+
+### Security Considerations
+
+- Contracts have NOT been audited
+- Do not use with real funds on mainnet
+- Test thoroughly on testnet first
+- Report security issues privately
+
+### Bug Bounty
+
+Planning to launch bug bounty program after audit.
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🙏 Acknowledgments
+
+- **Uniswap** - For Uniswap V4 hooks framework
+- **EigenLayer** - For AVS infrastructure
+- **OpenZeppelin** - For secure contract libraries
+- **Foundry** - For amazing development tools
+
+## 📞 Contact
+
+- **GitHub**: [@big14way](https://github.com/big14way)
+- **Project**: [Bastion Protocol](https://github.com/big14way/Bastion)
+
+## 🗺️ Roadmap
+
+### Phase 1: MVP (✅ Complete)
+- [x] Core smart contracts
+- [x] EigenLayer AVS integration
+- [x] Frontend with real-time data
+- [x] Interactive demo mode
+- [x] Deployment scripts
+
+### Phase 2: Testnet Launch (🔄 In Progress)
+- [ ] Deploy to Base Sepolia
+- [ ] Run AVS operator nodes
+- [ ] Community testing
+- [ ] Bug fixes and improvements
+
+### Phase 3: Audit & Mainnet (📋 Planned)
+- [ ] Smart contract audit
+- [ ] Bug bounty program
+- [ ] Mainnet deployment
+- [ ] Liquidity mining program
+
+### Phase 4: Expansion (💡 Future)
+- [ ] Additional asset support
+- [ ] Cross-chain deployment
+- [ ] Governance token
+- [ ] DAO formation
+
+---
+
+**Built with ❤️ for the Ethereum ecosystem**
+
+🏆 **Ready for Hackathon Demo!**
