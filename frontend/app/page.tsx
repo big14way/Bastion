@@ -1,6 +1,7 @@
 "use client";
 
 import Navigation from "@/components/Navigation";
+import DemoSimulation from "@/components/DemoSimulation";
 import { useBasketComposition, useInsuranceCoverage, useDynamicFee } from "@/hooks";
 
 export default function Dashboard() {
@@ -145,6 +146,9 @@ export default function Dashboard() {
           </div>
         </div>
       </main>
+
+      {/* Demo Simulation Component */}
+      <DemoSimulation />
     </div>
   );
 }
