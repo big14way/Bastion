@@ -90,6 +90,15 @@ contract BastionTaskManager is OwnableUpgradeable, PausableUpgradeable {
     /// @notice Mapping to track if an operator has responded to a task
     mapping(uint32 => mapping(address => bool)) public hasOperatorResponded;
 
+    /// @notice Mapping of pool ID to latest VOLATILITY_CALC task index
+    mapping(bytes32 => uint32) public latestVolatilityTaskIndex;
+
+    /// @notice Mapping of asset address to latest DEPEG_CHECK task index
+    mapping(address => uint32) public latestDepegCheckTaskIndex;
+
+    /// @notice Mapping of lending module address to latest RATE_UPDATE task index
+    mapping(address => uint32) public latestRateUpdateTaskIndex;
+
     // -----------------------------------------------
     // Events
     // -----------------------------------------------
@@ -405,6 +414,9 @@ contract BastionTaskManager is OwnableUpgradeable, PausableUpgradeable {
             task.status = TaskStatus.COMPLETED;
             totalTasksCompleted++;
 
+            // Update latest task index for consumer contracts to read
+            _updateLatestTaskIndex(task.taskType, taskIndex, task.taskData);
+
             emit TaskCompleted(taskIndex, winningResponseHash);
         }
     }
@@ -566,5 +578,121 @@ contract BastionTaskManager is OwnableUpgradeable, PausableUpgradeable {
             totalStake += serviceManager.getOperatorStake(operators[i]);
         }
         return totalStake;
+    }
+
+    /// @notice Updates the latest task index mapping for a given task type
+    /// @param taskType The type of task
+    /// @param taskIndex The task index
+    /// @param taskData The task data to decode identifiers from
+    function _updateLatestTaskIndex(TaskType taskType, uint32 taskIndex, bytes memory taskData) internal {
+        if (taskType == TaskType.DEPEG_CHECK) {
+            (address assetAddress,) = abi.decode(taskData, (address, uint256));
+            latestDepegCheckTaskIndex[assetAddress] = taskIndex;
+        } else if (taskType == TaskType.VOLATILITY_CALC) {
+            (address poolAddress,,) = abi.decode(taskData, (address, uint256, uint256));
+            bytes32 poolId = keccak256(abi.encode(poolAddress)); // Simple pool ID derivation
+            latestVolatilityTaskIndex[poolId] = taskIndex;
+        } else if (taskType == TaskType.RATE_UPDATE) {
+            (address lendingModuleAddress,,) = abi.decode(taskData, (address, uint256, uint256));
+            latestRateUpdateTaskIndex[lendingModuleAddress] = taskIndex;
+        }
+    }
+
+    // -----------------------------------------------
+    // Consumer View Functions (for IAVSConsumer)
+    // -----------------------------------------------
+
+    /// @notice Gets the latest validated volatility for a pool
+    /// @param poolId The pool identifier
+    /// @return volatility Volatility in basis points
+    /// @return timestamp When the data was validated
+    /// @return isValid Whether consensus was reached
+    function getLatestVolatility(bytes32 poolId)
+        external
+        view
+        returns (uint256 volatility, uint256 timestamp, bool isValid)
+    {
+        uint32 taskIndex = latestVolatilityTaskIndex[poolId];
+        if (taskIndex == 0) return (0, 0, false);
+
+        Task storage task = allTasks[taskIndex];
+        if (task.status != TaskStatus.COMPLETED) return (0, 0, false);
+
+        AggregatedResponse storage response = aggregatedResponses[taskIndex];
+        if (response.timestamp == 0) return (0, 0, false);
+
+        // Find the actual response data from one of the signers
+        TaskResponse[] storage responses = taskResponses[taskIndex];
+        if (responses.length == 0) return (0, 0, false);
+
+        // Decode the response data: (uint256 volatility, uint256 timestamp)
+        (volatility, timestamp) = abi.decode(responses[0].responseData, (uint256, uint256));
+        isValid = true;
+    }
+
+    /// @notice Gets the latest validated depeg status for an asset
+    /// @param assetAddress The asset address
+    /// @return isDepegged Whether the asset is depegged
+    /// @return currentPrice Current price ratio (18 decimals)
+    /// @return deviation Deviation from peg in basis points
+    /// @return timestamp When the data was validated
+    /// @return isValid Whether consensus was reached
+    function getLatestDepegStatus(address assetAddress)
+        external
+        view
+        returns (
+            bool isDepegged,
+            uint256 currentPrice,
+            uint256 deviation,
+            uint256 timestamp,
+            bool isValid
+        )
+    {
+        uint32 taskIndex = latestDepegCheckTaskIndex[assetAddress];
+        if (taskIndex == 0) return (false, 0, 0, 0, false);
+
+        Task storage task = allTasks[taskIndex];
+        if (task.status != TaskStatus.COMPLETED) return (false, 0, 0, 0, false);
+
+        AggregatedResponse storage response = aggregatedResponses[taskIndex];
+        if (response.timestamp == 0) return (false, 0, 0, 0, false);
+
+        TaskResponse[] storage responses = taskResponses[taskIndex];
+        if (responses.length == 0) return (false, 0, 0, 0, false);
+
+        // Decode the response data: (bool isDepegged, uint256 currentPrice, uint256 deviation)
+        (isDepegged, currentPrice, deviation) = abi.decode(
+            responses[0].responseData,
+            (bool, uint256, uint256)
+        );
+        timestamp = response.timestamp;
+        isValid = true;
+    }
+
+    /// @notice Gets the latest validated interest rate for a lending module
+    /// @param lendingModuleAddress The lending module address
+    /// @return newRate Interest rate in basis points
+    /// @return timestamp When the data was validated
+    /// @return isValid Whether consensus was reached
+    function getLatestInterestRate(address lendingModuleAddress)
+        external
+        view
+        returns (uint256 newRate, uint256 timestamp, bool isValid)
+    {
+        uint32 taskIndex = latestRateUpdateTaskIndex[lendingModuleAddress];
+        if (taskIndex == 0) return (0, 0, false);
+
+        Task storage task = allTasks[taskIndex];
+        if (task.status != TaskStatus.COMPLETED) return (0, 0, false);
+
+        AggregatedResponse storage response = aggregatedResponses[taskIndex];
+        if (response.timestamp == 0) return (0, 0, false);
+
+        TaskResponse[] storage responses = taskResponses[taskIndex];
+        if (responses.length == 0) return (0, 0, false);
+
+        // Decode the response data: (uint256 newRate, uint256 timestamp)
+        (newRate, timestamp) = abi.decode(responses[0].responseData, (uint256, uint256));
+        isValid = true;
     }
 }

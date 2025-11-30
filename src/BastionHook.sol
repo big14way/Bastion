@@ -11,15 +11,17 @@ import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
 
 import {IVolatilityOracle} from "./interfaces/IVolatilityOracle.sol";
+import {IAVSConsumer} from "./interfaces/IAVSConsumer.sol";
 import {InsuranceTranche} from "./InsuranceTranche.sol";
 import {LendingModule} from "./LendingModule.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {BastionTaskManager} from "./avs/BastionTaskManager.sol";
 
 /// @title BastionHook
 /// @notice A Uniswap v4 hook with dynamic fees, basket rebalancing, and insurance integration
-contract BastionHook is BaseHook {
+contract BastionHook is BaseHook, IAVSConsumer {
     using PoolIdLibrary for PoolKey;
     using SafeERC20 for IERC20;
 
@@ -91,6 +93,9 @@ contract BastionHook is BaseHook {
 
     /// @notice The volatility oracle used to determine dynamic fees
     IVolatilityOracle public immutable volatilityOracle;
+
+    /// @notice Bastion AVS task manager for validated oracle data
+    BastionTaskManager public bastionTaskManager;
 
     /// @notice Insurance tranche for depeg protection
     InsuranceTranche public insuranceTranche;
@@ -628,5 +633,118 @@ contract BastionHook is BaseHook {
     function transferOwnership(address newOwner) external onlyOwner {
         require(newOwner != address(0), "BastionHook: zero address");
         owner = newOwner;
+    }
+
+    /// @notice Set Bastion AVS task manager
+    /// @param _taskManager Task manager address
+    function setBastionTaskManager(address _taskManager) external onlyOwner {
+        require(_taskManager != address(0), "BastionHook: zero address");
+        bastionTaskManager = BastionTaskManager(_taskManager);
+    }
+
+    // -----------------------------------------------
+    // IAVSConsumer Implementation
+    // -----------------------------------------------
+
+    /// @notice Gets the latest validated volatility data from AVS for a pool
+    /// @param poolId The pool identifier (keccak256 of pool address)
+    /// @return volatilityData Struct containing volatility, timestamp, and validity
+    function getLatestVolatility(bytes32 poolId)
+        external
+        view
+        override
+        returns (VolatilityData memory volatilityData)
+    {
+        if (address(bastionTaskManager) == address(0)) {
+            revert AVSDataNotAvailable();
+        }
+
+        (uint256 volatility, uint256 timestamp, bool isValid) =
+            bastionTaskManager.getLatestVolatility(poolId);
+
+        volatilityData = VolatilityData({
+            volatility: volatility,
+            timestamp: timestamp,
+            isValid: isValid
+        });
+
+        if (!isValid) {
+            revert AVSDataNotAvailable();
+        }
+    }
+
+    /// @notice Gets the latest validated depeg status from AVS for an asset
+    /// @param assetAddress The address of the asset to check
+    /// @return depegData Struct containing depeg status, price, deviation, timestamp, and validity
+    function getLatestDepegStatus(address assetAddress)
+        external
+        view
+        override
+        returns (DepegData memory depegData)
+    {
+        if (address(bastionTaskManager) == address(0)) {
+            revert AVSDataNotAvailable();
+        }
+
+        (bool isDepegged, uint256 currentPrice, uint256 deviation, uint256 timestamp, bool isValid) =
+            bastionTaskManager.getLatestDepegStatus(assetAddress);
+
+        depegData = DepegData({
+            isDepegged: isDepegged,
+            currentPrice: currentPrice,
+            deviation: deviation,
+            timestamp: timestamp,
+            isValid: isValid
+        });
+
+        if (!isValid) {
+            revert AVSDataNotAvailable();
+        }
+    }
+
+    /// @notice Checks if volatility data for a pool is stale
+    /// @param poolId The pool identifier
+    /// @param maxAge Maximum acceptable age in seconds
+    /// @return isStale True if data is older than maxAge or unavailable
+    function isVolatilityDataStale(bytes32 poolId, uint256 maxAge)
+        external
+        view
+        override
+        returns (bool isStale)
+    {
+        if (address(bastionTaskManager) == address(0)) {
+            return true;
+        }
+
+        (,uint256 timestamp, bool isValid) = bastionTaskManager.getLatestVolatility(poolId);
+
+        if (!isValid) {
+            return true;
+        }
+
+        return (block.timestamp - timestamp) > maxAge;
+    }
+
+    /// @notice Checks if depeg status data for an asset is stale
+    /// @param assetAddress The address of the asset
+    /// @param maxAge Maximum acceptable age in seconds
+    /// @return isStale True if data is older than maxAge or unavailable
+    function isDepegDataStale(address assetAddress, uint256 maxAge)
+        external
+        view
+        override
+        returns (bool isStale)
+    {
+        if (address(bastionTaskManager) == address(0)) {
+            return true;
+        }
+
+        (,,,uint256 timestamp, bool isValid) = bastionTaskManager.getLatestDepegStatus(assetAddress);
+
+        if (!isValid) {
+            return true;
+        }
+
+        return (block.timestamp - timestamp) > maxAge;
     }
 }

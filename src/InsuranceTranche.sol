@@ -5,6 +5,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {BastionTaskManager} from "./avs/BastionTaskManager.sol";
 
 /// @title InsuranceTranche
 /// @notice Manages insurance pool for basket assets with depeg protection
@@ -88,6 +89,9 @@ contract InsuranceTranche is ReentrancyGuard {
     /// @notice Hook address authorized to collect premiums
     address public authorizedHook;
 
+    /// @notice Bastion AVS task manager for consensus validation
+    BastionTaskManager public bastionTaskManager;
+
     /// @notice Emergency pause state
     bool public paused;
 
@@ -118,6 +122,22 @@ contract InsuranceTranche is ReentrancyGuard {
 
     /// @notice Emitted when emergency pause state changes
     event PauseStateChanged(bool paused);
+
+    /// @notice Emitted when AVS consensus validates a depeg
+    event AVSConsensusVerified(address indexed asset, bool isDepegged, uint256 avsTimestamp);
+
+    // -----------------------------------------------
+    // Errors
+    // -----------------------------------------------
+
+    /// @notice Thrown when AVS consensus is required but not reached
+    error AVSConsensusNotReached();
+
+    /// @notice Thrown when AVS task manager is not set
+    error AVSTaskManagerNotSet();
+
+    /// @notice Thrown when AVS data is stale
+    error AVSDataStale(uint256 age, uint256 maxAge);
 
     // -----------------------------------------------
     // Modifiers
@@ -230,13 +250,46 @@ contract InsuranceTranche is ReentrancyGuard {
         return (isDepegged, currentPrice, deviation);
     }
 
+    /// @notice Verify AVS consensus for depeg
+    /// @param asset Address of the asset to check
+    /// @return isDepegged Whether asset is depegged per AVS
+    /// @return timestamp AVS validation timestamp
+    function _verifyAVSConsensus(address asset) internal returns (bool isDepegged, uint256 timestamp) {
+        if (address(bastionTaskManager) == address(0)) {
+            revert AVSTaskManagerNotSet();
+        }
+
+        // Get AVS validated depeg status
+        bool avsValid;
+        (isDepegged,,, timestamp, avsValid) = bastionTaskManager.getLatestDepegStatus(asset);
+
+        // Verify AVS consensus was reached
+        if (!avsValid) {
+            revert AVSConsensusNotReached();
+        }
+
+        // Verify AVS data is fresh (within 1 hour)
+        if (block.timestamp - timestamp > 1 hours) {
+            revert AVSDataStale(block.timestamp - timestamp, 1 hours);
+        }
+
+        // Verify AVS confirms depeg
+        require(isDepegged, "InsuranceTranche: AVS does not confirm depeg");
+
+        emit AVSConsensusVerified(asset, isDepegged, timestamp);
+    }
+
     /// @notice Execute payout to affected LPs when depeg occurs
     /// @dev Distributes insurance pool pro-rata to LPs based on their shares
+    /// @dev Requires AVS consensus to validate depeg before executing payout
     /// @param asset Address of the depegged asset
     function executePayout(address asset) external onlyOwner whenNotPaused nonReentrant {
-        // Verify depeg condition
+        // REQUIRE AVS CONSENSUS FIRST
+        (bool avsDepeg, uint256 avsTime) = _verifyAVSConsensus(asset);
+
+        // Double-check with Chainlink oracle as fallback
         (bool isDepegged, uint256 currentPrice, uint256 deviation) = checkDepeg(asset);
-        require(isDepegged, "InsuranceTranche: asset not depegged");
+        require(isDepegged, "InsuranceTranche: asset not depegged per oracle");
 
         require(insurancePoolBalance > 0, "InsuranceTranche: insufficient insurance pool");
         require(totalLPShares > 0, "InsuranceTranche: no LPs to pay");
@@ -381,6 +434,13 @@ contract InsuranceTranche is ReentrancyGuard {
     function setAuthorizedHook(address newHook) external onlyOwner {
         require(newHook != address(0), "InsuranceTranche: zero address");
         authorizedHook = newHook;
+    }
+
+    /// @notice Set Bastion AVS task manager for consensus validation
+    /// @param _taskManager Task manager address
+    function setBastionTaskManager(address _taskManager) external onlyOwner {
+        require(_taskManager != address(0), "InsuranceTranche: zero address");
+        bastionTaskManager = BastionTaskManager(_taskManager);
     }
 
     /// @notice Transfer ownership
