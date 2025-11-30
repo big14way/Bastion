@@ -1,18 +1,17 @@
 "use client";
 
 import Navigation from "@/components/Navigation";
+import { useBasketComposition, useInsuranceCoverage, useDynamicFee } from "@/hooks";
 
 export default function Dashboard() {
-  const basketAssets = [
-    { name: "stETH", symbol: "stETH", weight: 30, value: 30000, price: 1.0 },
-    { name: "cbETH", symbol: "cbETH", weight: 30, value: 30000, price: 1.0 },
-    { name: "rETH", symbol: "rETH", weight: 25, value: 25000, price: 1.0 },
-    { name: "USDe", symbol: "USDe", weight: 15, value: 15000, price: 1.0 },
-  ];
+  // Fetch real-time blockchain data
+  const { assets: basketAssets, totalValue } = useBasketComposition();
+  const { coverageRatio, poolBalance } = useInsuranceCoverage();
+  const { volatility, feeRate, feeTier } = useDynamicFee();
 
-  const totalValue = basketAssets.reduce((sum, asset) => sum + asset.value, 0);
-  const apy = 12.5; // 12.5% APY
-  const insuranceCoverage = 85; // 85% coverage
+  // Mock APY for now - would calculate from actual fee revenue
+  const apy = 12.5;
+  const insuranceCoverage = coverageRatio || 85;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -94,14 +93,26 @@ export default function Dashboard() {
             <div className="space-y-3">
               <div className="flex justify-between items-center">
                 <span className="text-gray-600">Current Volatility</span>
-                <span className="font-semibold text-gray-900">8%</span>
+                <span className="font-semibold text-gray-900">
+                  {volatility.toFixed(2)}%
+                </span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-gray-600">Fee Tier</span>
-                <span className="font-semibold text-green-600">LOW (0.05%)</span>
+                <span className={`font-semibold ${
+                  feeTier === "LOW" ? "text-green-600" :
+                  feeTier === "MEDIUM" ? "text-yellow-600" :
+                  "text-red-600"
+                }`}>
+                  {feeTier} ({feeRate.toFixed(2)}%)
+                </span>
               </div>
               <div className="w-full bg-gray-200 rounded-full h-2">
-                <div className="bg-green-500 h-2 rounded-full" style={{ width: "30%" }}></div>
+                <div className={`h-2 rounded-full ${
+                  feeTier === "LOW" ? "bg-green-500" :
+                  feeTier === "MEDIUM" ? "bg-yellow-500" :
+                  "bg-red-500"
+                }`} style={{ width: `${Math.min(volatility * 2, 100)}%` }}></div>
               </div>
               <p className="text-sm text-gray-500">
                 Fees automatically adjust based on market volatility (0.05% - 1.00%)
@@ -114,14 +125,18 @@ export default function Dashboard() {
             <div className="space-y-3">
               <div className="flex justify-between items-center">
                 <span className="text-gray-600">Pool Balance</span>
-                <span className="font-semibold text-gray-900">$8,500</span>
+                <span className="font-semibold text-gray-900">
+                  ${poolBalance.toLocaleString()}
+                </span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-gray-600">Coverage Ratio</span>
-                <span className="font-semibold text-blue-600">85%</span>
+                <span className="font-semibold text-blue-600">
+                  {coverageRatio.toFixed(0)}%
+                </span>
               </div>
               <div className="w-full bg-gray-200 rounded-full h-2">
-                <div className="bg-blue-500 h-2 rounded-full" style={{ width: "85%" }}></div>
+                <div className="bg-blue-500 h-2 rounded-full" style={{ width: `${coverageRatio}%` }}></div>
               </div>
               <p className="text-sm text-gray-500">
                 Protected against depeg events exceeding 20% threshold

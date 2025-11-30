@@ -2,26 +2,28 @@
 
 import { useState } from "react";
 import Navigation from "@/components/Navigation";
+import { useBorrowingCapacity } from "@/hooks";
 
 export default function Borrow() {
   const [borrowAmount, setBorrowAmount] = useState("");
 
-  const borrowStats = {
-    lpPositionValue: 5000,
-    maxLTV: 70, // 70%
-    currentBorrowed: 2000,
-    interestRate: 5.0, // 5% APY
-    liquidationThreshold: 75, // 75%
-  };
+  // Fetch real-time borrowing data from blockchain
+  const {
+    lpPositionValue,
+    currentBorrowed,
+    availableCredit,
+    healthFactor,
+    interestRate,
+    maxLTV,
+    currentLTV,
+  } = useBorrowingCapacity();
 
-  const availableCredit = (borrowStats.lpPositionValue * borrowStats.maxLTV) / 100 - borrowStats.currentBorrowed;
-  const currentLTV = (borrowStats.currentBorrowed / borrowStats.lpPositionValue) * 100;
-  const healthFactor = borrowStats.lpPositionValue / (borrowStats.currentBorrowed || 1) * (borrowStats.liquidationThreshold / 100);
+  const liquidationThreshold = 75; // 75% - could also fetch from contract
 
   const newBorrowAmount = parseFloat(borrowAmount) || 0;
-  const newTotalBorrowed = borrowStats.currentBorrowed + newBorrowAmount;
-  const newLTV = (newTotalBorrowed / borrowStats.lpPositionValue) * 100;
-  const newHealthFactor = borrowStats.lpPositionValue / (newTotalBorrowed || 1) * (borrowStats.liquidationThreshold / 100);
+  const newTotalBorrowed = currentBorrowed + newBorrowAmount;
+  const newLTV = lpPositionValue > 0 ? (newTotalBorrowed / lpPositionValue) * 100 : 0;
+  const newHealthFactor = newTotalBorrowed > 0 ? lpPositionValue / newTotalBorrowed * (liquidationThreshold / 100) : 0;
 
   const handleBorrow = (e: React.FormEvent) => {
     e.preventDefault();
@@ -103,7 +105,7 @@ export default function Borrow() {
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-600">Est. Annual Interest</span>
                         <span className="font-semibold text-gray-900">
-                          ${(newTotalBorrowed * borrowStats.interestRate / 100).toFixed(2)}
+                          ${(newTotalBorrowed * interestRate / 100).toFixed(2)}
                         </span>
                       </div>
                     </div>
@@ -143,13 +145,13 @@ export default function Borrow() {
                 <div>
                   <p className="text-sm text-gray-600">LP Position Value</p>
                   <p className="text-2xl font-bold text-gray-900">
-                    ${borrowStats.lpPositionValue.toLocaleString()}
+                    ${lpPositionValue.toLocaleString()}
                   </p>
                 </div>
                 <div>
                   <p className="text-sm text-gray-600">Current Borrowed</p>
                   <p className="text-2xl font-bold text-gray-900">
-                    ${borrowStats.currentBorrowed.toLocaleString()}
+                    ${currentBorrowed.toLocaleString()}
                   </p>
                 </div>
                 <div>
@@ -168,7 +170,7 @@ export default function Borrow() {
                   <div className="flex justify-between mb-2">
                     <span className="text-sm text-gray-600">Loan-to-Value</span>
                     <span className="text-sm font-semibold text-gray-900">
-                      {currentLTV.toFixed(2)}% / {borrowStats.maxLTV}%
+                      {currentLTV.toFixed(2)}% / {maxLTV}%
                     </span>
                   </div>
                   <div className="w-full bg-gray-200 rounded-full h-2">
@@ -176,7 +178,7 @@ export default function Borrow() {
                       className={`h-2 rounded-full ${
                         currentLTV > 65 ? "bg-red-500" : currentLTV > 50 ? "bg-yellow-500" : "bg-green-500"
                       }`}
-                      style={{ width: `${(currentLTV / borrowStats.maxLTV) * 100}%` }}
+                      style={{ width: `${(currentLTV / maxLTV) * 100}%` }}
                     ></div>
                   </div>
                 </div>
@@ -197,7 +199,7 @@ export default function Borrow() {
                   <div className="flex justify-between">
                     <span className="text-sm text-gray-600">Interest Rate</span>
                     <span className="text-sm font-semibold text-gray-900">
-                      {borrowStats.interestRate}% APY
+                      {interestRate}% APY
                     </span>
                   </div>
                 </div>
@@ -206,7 +208,7 @@ export default function Borrow() {
                   <div className="flex justify-between">
                     <span className="text-sm text-gray-600">Liquidation Threshold</span>
                     <span className="text-sm font-semibold text-gray-900">
-                      {borrowStats.liquidationThreshold}%
+                      {liquidationThreshold}%
                     </span>
                   </div>
                 </div>
