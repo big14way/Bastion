@@ -712,7 +712,7 @@ contract BastionHook is BaseHook, IAVSConsumer {
     /// @param key The pool key
     function triggerRebalance(PoolKey calldata key) external {
         PoolId poolId = key.toId();
-        (bool shouldRebalance,,,,,) = _shouldRebalance(poolId);
+        (bool shouldRebalance,) = _shouldRebalance(poolId);
         require(shouldRebalance, "BastionHook: rebalancing not needed");
         _rebalanceBasket(poolId, key);
     }
