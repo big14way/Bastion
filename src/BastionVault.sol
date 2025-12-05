@@ -4,12 +4,14 @@ pragma solidity ^0.8.26;
 import {ERC4626} from "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {IPriceOracle} from "./interfaces/IPriceOracle.sol";
 
 /// @title BastionVault
 /// @notice ERC-4626 tokenized vault that wraps a multi-asset basket
-/// @dev Manages deposits/withdrawals and tracks underlying basket value
+/// @dev Manages deposits/withdrawals and tracks underlying basket value using oracle pricing
 contract BastionVault is ERC4626 {
     using Math for uint256;
     using SafeERC20 for IERC20;
@@ -36,6 +38,9 @@ contract BastionVault is ERC4626 {
     /// @notice Maximum number of assets in the basket
     uint256 public constant MAX_ASSETS = 10;
 
+    /// @notice Price precision (18 decimals)
+    uint256 public constant PRICE_PRECISION = 1e18;
+
     // -----------------------------------------------
     // State Variables
     // -----------------------------------------------
@@ -61,8 +66,21 @@ contract BastionVault is ERC4626 {
     /// @notice Address that receives fees
     address public feeRecipient;
 
-    /// @notice Vault owner/admin
-    address public owner;
+    /// @notice Price oracle for asset valuation
+    IPriceOracle public priceOracle;
+
+    /// @notice Whether to use oracle pricing (false = 1:1 fallback)
+    bool public useOraclePricing;
+
+    // -----------------------------------------------
+    // Ownable2Step State Variables
+    // -----------------------------------------------
+
+    /// @notice Current owner address
+    address private _owner;
+
+    /// @notice Pending owner for two-step transfer
+    address private _pendingOwner;
 
     // -----------------------------------------------
     // Events
@@ -83,15 +101,33 @@ contract BastionVault is ERC4626 {
     /// @notice Emitted when basket is rebalanced
     event BasketRebalanced(uint256 timestamp);
 
+    /// @notice Emitted when ownership transfer is started
+    event OwnershipTransferStarted(address indexed previousOwner, address indexed newOwner);
+
     /// @notice Emitted when ownership is transferred
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+
+    /// @notice Emitted when price oracle is updated
+    event PriceOracleUpdated(address indexed oldOracle, address indexed newOracle);
+
+    /// @notice Emitted when oracle pricing mode is toggled
+    event OraclePricingToggled(bool enabled);
+
+    // -----------------------------------------------
+    // Errors
+    // -----------------------------------------------
+
+    error OwnableUnauthorizedAccount(address account);
+    error OwnableInvalidOwner(address owner);
 
     // -----------------------------------------------
     // Modifiers
     // -----------------------------------------------
 
     modifier onlyOwner() {
-        require(msg.sender == owner, "BastionVault: caller is not owner");
+        if (msg.sender != _owner) {
+            revert OwnableUnauthorizedAccount(msg.sender);
+        }
         _;
     }
 
@@ -108,15 +144,59 @@ contract BastionVault is ERC4626 {
         string memory _name,
         string memory _symbol
     ) ERC4626(_asset) ERC20(_name, _symbol) {
-        owner = msg.sender;
+        _owner = msg.sender;
         feeRecipient = msg.sender;
+        emit OwnershipTransferred(address(0), msg.sender);
+    }
+
+    // -----------------------------------------------
+    // Ownable2Step Functions
+    // -----------------------------------------------
+
+    /// @notice Returns the current owner
+    function owner() public view returns (address) {
+        return _owner;
+    }
+
+    /// @notice Returns the pending owner
+    function pendingOwner() public view returns (address) {
+        return _pendingOwner;
+    }
+
+    /// @notice Starts ownership transfer to a new account
+    /// @param newOwner Address of the new owner
+    function transferOwnership(address newOwner) public onlyOwner {
+        if (newOwner == address(0)) {
+            revert OwnableInvalidOwner(address(0));
+        }
+        _pendingOwner = newOwner;
+        emit OwnershipTransferStarted(_owner, newOwner);
+    }
+
+    /// @notice Accepts the ownership transfer
+    function acceptOwnership() public {
+        if (_pendingOwner != msg.sender) {
+            revert OwnableUnauthorizedAccount(msg.sender);
+        }
+        address oldOwner = _owner;
+        _owner = msg.sender;
+        _pendingOwner = address(0);
+        emit OwnershipTransferred(oldOwner, msg.sender);
+    }
+
+    /// @notice Renounces ownership (use with caution)
+    function renounceOwnership() public onlyOwner {
+        address oldOwner = _owner;
+        _owner = address(0);
+        _pendingOwner = address(0);
+        emit OwnershipTransferred(oldOwner, address(0));
     }
 
     // -----------------------------------------------
     // ERC-4626 Core Functions
     // -----------------------------------------------
 
-    /// @notice Returns the total assets under management
+    /// @notice Returns the total assets under management using oracle prices
     /// @return Total value of all basket assets in base asset terms
     function totalAssets() public view override returns (uint256) {
         uint256 total = 0;
@@ -129,9 +209,10 @@ contract BastionVault is ERC4626 {
             BasketAsset storage basketAsset = basketAssets[i];
             uint256 balance = IERC20(basketAsset.token).balanceOf(address(this));
 
-            // Convert to base asset value (simplified - in production would use oracle)
-            // For now, assume 1:1 pricing
-            total += balance;
+            if (balance > 0) {
+                uint256 value = _getAssetValue(basketAsset.token, balance);
+                total += value;
+            }
         }
 
         return total;
@@ -224,22 +305,22 @@ contract BastionVault is ERC4626 {
     /// @notice Withdraw assets by burning shares
     /// @param assets Amount of assets to withdraw
     /// @param receiver Address to receive assets
-    /// @param owner_ Address that owns the shares
+    /// @param shareOwner Address that owns the shares
     /// @return shares Amount of shares burned
-    function withdraw(uint256 assets, address receiver, address owner_) public override returns (uint256 shares) {
-        require(assets <= maxWithdraw(owner_), "BastionVault: withdraw exceeds max");
+    function withdraw(uint256 assets, address receiver, address shareOwner) public override returns (uint256 shares) {
+        require(assets <= maxWithdraw(shareOwner), "BastionVault: withdraw exceeds max");
 
         // Calculate fee and shares needed
         uint256 fee = _calculateWithdrawalFee(assets);
         shares = previewWithdraw(assets);
 
         // Check allowance if not owner
-        if (msg.sender != owner_) {
-            _spendAllowance(owner_, msg.sender, shares);
+        if (msg.sender != shareOwner) {
+            _spendAllowance(shareOwner, msg.sender, shares);
         }
 
         // Burn shares
-        _burn(owner_, shares);
+        _burn(shareOwner, shares);
 
         // Withdraw from basket if needed
         _withdrawFromBasket(assets + fee);
@@ -252,7 +333,7 @@ contract BastionVault is ERC4626 {
         // Transfer assets to receiver
         SafeERC20.safeTransfer(IERC20(asset()), receiver, assets);
 
-        emit Withdraw(msg.sender, receiver, owner_, assets, shares);
+        emit Withdraw(msg.sender, receiver, shareOwner, assets, shares);
 
         return shares;
     }
@@ -260,6 +341,45 @@ contract BastionVault is ERC4626 {
     // -----------------------------------------------
     // Internal Helper Functions
     // -----------------------------------------------
+
+    /// @notice Get the value of an asset amount in base asset terms
+    /// @param token Token address
+    /// @param amount Amount of tokens
+    /// @return value Value in base asset terms
+    function _getAssetValue(address token, uint256 amount) internal view returns (uint256 value) {
+        // If oracle pricing is disabled or not configured, use 1:1
+        if (!useOraclePricing || address(priceOracle) == address(0)) {
+            return amount;
+        }
+
+        // Check if oracle has a price feed for this token
+        if (!priceOracle.hasPriceFeed(token)) {
+            return amount; // Fallback to 1:1
+        }
+
+        // Get price from oracle (18 decimals)
+        uint256 tokenPrice = priceOracle.getPrice(token);
+
+        // Get base asset price
+        uint256 basePrice = PRICE_PRECISION; // Default 1:1
+        if (priceOracle.hasPriceFeed(asset())) {
+            basePrice = priceOracle.getPrice(asset());
+        }
+
+        // Calculate value: (amount * tokenPrice) / basePrice
+        // Adjust for token decimals
+        uint8 tokenDecimals = IERC20Metadata(token).decimals();
+        uint8 baseDecimals = IERC20Metadata(asset()).decimals();
+
+        // Normalize to base asset decimals
+        if (tokenDecimals > baseDecimals) {
+            value = (amount * tokenPrice) / (basePrice * 10 ** (tokenDecimals - baseDecimals));
+        } else if (tokenDecimals < baseDecimals) {
+            value = (amount * tokenPrice * 10 ** (baseDecimals - tokenDecimals)) / basePrice;
+        } else {
+            value = (amount * tokenPrice) / basePrice;
+        }
+    }
 
     /// @notice Calculate deposit fee
     /// @param assets Amount of assets
@@ -287,7 +407,7 @@ contract BastionVault is ERC4626 {
             uint256 allocation = (assets * basketAsset.weight) / totalWeight;
 
             if (allocation > 0) {
-                // In production, this would swap base asset for basket asset
+                // In production with DEX integration, this would swap base asset for basket asset
                 // For now, we just track the allocation intent
                 basketAsset.balance += allocation;
             }
@@ -316,7 +436,7 @@ contract BastionVault is ERC4626 {
                     toWithdraw = basketAsset.balance;
                 }
 
-                // In production, this would swap basket asset back to base asset
+                // In production with DEX integration, this would swap basket asset back to base asset
                 // For now, we just track the withdrawal
                 basketAsset.balance -= toWithdraw;
                 needed -= toWithdraw;
@@ -327,6 +447,21 @@ contract BastionVault is ERC4626 {
     // -----------------------------------------------
     // Admin Functions
     // -----------------------------------------------
+
+    /// @notice Set the price oracle
+    /// @param _priceOracle Address of the price oracle
+    function setPriceOracle(address _priceOracle) external onlyOwner {
+        address oldOracle = address(priceOracle);
+        priceOracle = IPriceOracle(_priceOracle);
+        emit PriceOracleUpdated(oldOracle, _priceOracle);
+    }
+
+    /// @notice Toggle oracle pricing mode
+    /// @param enabled Whether to use oracle pricing
+    function setOraclePricing(bool enabled) external onlyOwner {
+        useOraclePricing = enabled;
+        emit OraclePricingToggled(enabled);
+    }
 
     /// @notice Add a new asset to the basket
     /// @param token Token address
@@ -391,15 +526,6 @@ contract BastionVault is ERC4626 {
         emit FeeRecipientUpdated(oldRecipient, _feeRecipient);
     }
 
-    /// @notice Transfer ownership
-    /// @param newOwner New owner address
-    function transferOwnership(address newOwner) external onlyOwner {
-        require(newOwner != address(0), "BastionVault: zero address");
-        address oldOwner = owner;
-        owner = newOwner;
-        emit OwnershipTransferred(oldOwner, newOwner);
-    }
-
     // -----------------------------------------------
     // View Functions
     // -----------------------------------------------
@@ -419,5 +545,14 @@ contract BastionVault is ERC4626 {
         require(index < basketAssets.length, "BastionVault: invalid index");
         BasketAsset storage basketAsset = basketAssets[index];
         return (basketAsset.token, basketAsset.weight, basketAsset.balance);
+    }
+
+    /// @notice Get the value of a specific basket asset
+    /// @param token Token address
+    /// @return value Current value in base asset terms
+    function getAssetValue(address token) external view returns (uint256 value) {
+        require(isBasketAsset[token], "BastionVault: asset not in basket");
+        uint256 balance = IERC20(token).balanceOf(address(this));
+        return _getAssetValue(token, balance);
     }
 }
