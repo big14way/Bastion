@@ -8,6 +8,7 @@ import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IER
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IPriceOracle} from "./interfaces/IPriceOracle.sol";
+import {ISwapRouter} from "./interfaces/ISwapRouter.sol";
 
 /// @title BastionVault
 /// @notice ERC-4626 tokenized vault that wraps a multi-asset basket
@@ -72,6 +73,18 @@ contract BastionVault is ERC4626 {
     /// @notice Whether to use oracle pricing (false = 1:1 fallback)
     bool public useOraclePricing;
 
+    /// @notice DEX swap router for basket swaps
+    ISwapRouter public swapRouter;
+
+    /// @notice Whether DEX swaps are enabled (false = track only)
+    bool public dexSwapsEnabled;
+
+    /// @notice Maximum slippage for DEX swaps (basis points)
+    uint256 public maxSwapSlippage = 100; // 1% default
+
+    /// @notice Minimum amount for DEX swaps to avoid dust
+    uint256 public minSwapAmount = 1e15; // 0.001 tokens
+
     // -----------------------------------------------
     // Ownable2Step State Variables
     // -----------------------------------------------
@@ -112,6 +125,23 @@ contract BastionVault is ERC4626 {
 
     /// @notice Emitted when oracle pricing mode is toggled
     event OraclePricingToggled(bool enabled);
+
+    /// @notice Emitted when swap router is set
+    event SwapRouterSet(address indexed router);
+
+    /// @notice Emitted when DEX swaps are toggled
+    event DexSwapsToggled(bool enabled);
+
+    /// @notice Emitted when basket allocation swap is executed
+    event BasketSwapExecuted(
+        address indexed tokenIn,
+        address indexed tokenOut,
+        uint256 amountIn,
+        uint256 amountOut
+    );
+
+    /// @notice Emitted when swap settings are updated
+    event SwapSettingsUpdated(uint256 maxSlippage, uint256 minAmount);
 
     // -----------------------------------------------
     // Errors
@@ -402,14 +432,21 @@ contract BastionVault is ERC4626 {
             return; // No basket configured
         }
 
+        address baseAsset = asset();
+
         for (uint256 i = 0; i < basketAssets.length; i++) {
             BasketAsset storage basketAsset = basketAssets[i];
             uint256 allocation = (assets * basketAsset.weight) / totalWeight;
 
             if (allocation > 0) {
-                // In production with DEX integration, this would swap base asset for basket asset
-                // For now, we just track the allocation intent
-                basketAsset.balance += allocation;
+                if (dexSwapsEnabled && address(swapRouter) != address(0) && allocation >= minSwapAmount) {
+                    // Execute actual DEX swap
+                    uint256 received = _executeSwap(baseAsset, basketAsset.token, allocation);
+                    basketAsset.balance += received;
+                } else {
+                    // Track allocation intent (for testnet or when swaps disabled)
+                    basketAsset.balance += allocation;
+                }
             }
         }
     }
@@ -425,6 +462,7 @@ contract BastionVault is ERC4626 {
         }
 
         uint256 needed = assets - baseBalance;
+        address baseAsset = asset();
 
         // Withdraw proportionally from basket
         for (uint256 i = 0; i < basketAssets.length && needed > 0; i++) {
@@ -436,12 +474,48 @@ contract BastionVault is ERC4626 {
                     toWithdraw = basketAsset.balance;
                 }
 
-                // In production with DEX integration, this would swap basket asset back to base asset
-                // For now, we just track the withdrawal
-                basketAsset.balance -= toWithdraw;
-                needed -= toWithdraw;
+                if (dexSwapsEnabled && address(swapRouter) != address(0) && toWithdraw >= minSwapAmount) {
+                    // Execute actual DEX swap
+                    uint256 received = _executeSwap(basketAsset.token, baseAsset, toWithdraw);
+                    basketAsset.balance -= toWithdraw;
+                    needed = received >= needed ? 0 : needed - received;
+                } else {
+                    // Track withdrawal intent (for testnet or when swaps disabled)
+                    basketAsset.balance -= toWithdraw;
+                    needed -= toWithdraw;
+                }
             }
         }
+    }
+
+    /// @notice Execute a DEX swap
+    /// @param tokenIn Input token
+    /// @param tokenOut Output token
+    /// @param amountIn Amount to swap
+    /// @return amountOut Amount received
+    function _executeSwap(
+        address tokenIn,
+        address tokenOut,
+        uint256 amountIn
+    ) internal returns (uint256 amountOut) {
+        // Approve router
+        IERC20(tokenIn).forceApprove(address(swapRouter), amountIn);
+
+        // Get expected output and calculate minimum with slippage
+        uint256 expectedOut = swapRouter.getAmountOut(tokenIn, tokenOut, amountIn);
+        uint256 minOut = (expectedOut * (BASIS_POINTS - maxSwapSlippage)) / BASIS_POINTS;
+
+        // Execute swap
+        amountOut = swapRouter.swapExactTokensForTokens(
+            tokenIn,
+            tokenOut,
+            amountIn,
+            minOut,
+            address(this),
+            block.timestamp + 300 // 5 minute deadline
+        );
+
+        emit BasketSwapExecuted(tokenIn, tokenOut, amountIn, amountOut);
     }
 
     // -----------------------------------------------
@@ -461,6 +535,30 @@ contract BastionVault is ERC4626 {
     function setOraclePricing(bool enabled) external onlyOwner {
         useOraclePricing = enabled;
         emit OraclePricingToggled(enabled);
+    }
+
+    /// @notice Set the DEX swap router
+    /// @param _swapRouter Swap router address
+    function setSwapRouter(address _swapRouter) external onlyOwner {
+        swapRouter = ISwapRouter(_swapRouter);
+        emit SwapRouterSet(_swapRouter);
+    }
+
+    /// @notice Toggle DEX swap execution
+    /// @param enabled Whether to execute actual swaps
+    function setDexSwapsEnabled(bool enabled) external onlyOwner {
+        dexSwapsEnabled = enabled;
+        emit DexSwapsToggled(enabled);
+    }
+
+    /// @notice Update swap settings
+    /// @param _maxSlippage Max slippage in basis points
+    /// @param _minAmount Minimum swap amount
+    function setSwapSettings(uint256 _maxSlippage, uint256 _minAmount) external onlyOwner {
+        require(_maxSlippage <= 500, "BastionVault: slippage too high"); // Max 5%
+        maxSwapSlippage = _maxSlippage;
+        minSwapAmount = _minAmount;
+        emit SwapSettingsUpdated(_maxSlippage, _minAmount);
     }
 
     /// @notice Add a new asset to the basket
