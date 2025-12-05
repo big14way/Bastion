@@ -67,6 +67,7 @@ contract VolatilityOracle is IVolatilityOracle {
      * @param newAdmin New admin address
      */
     function updateAdmin(address newAdmin) external onlyAdmin {
+        if (newAdmin == address(0)) revert Unauthorized();
         address oldAdmin = admin;
         admin = newAdmin;
         emit AdminUpdated(oldAdmin, newAdmin);

@@ -83,6 +83,9 @@ contract BastionVault is ERC4626 {
     /// @notice Emitted when basket is rebalanced
     event BasketRebalanced(uint256 timestamp);
 
+    /// @notice Emitted when ownership is transferred
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+
     // -----------------------------------------------
     // Modifiers
     // -----------------------------------------------
@@ -392,7 +395,9 @@ contract BastionVault is ERC4626 {
     /// @param newOwner New owner address
     function transferOwnership(address newOwner) external onlyOwner {
         require(newOwner != address(0), "BastionVault: zero address");
+        address oldOwner = owner;
         owner = newOwner;
+        emit OwnershipTransferred(oldOwner, newOwner);
     }
 
     // -----------------------------------------------

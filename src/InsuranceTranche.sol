@@ -83,6 +83,21 @@ contract InsuranceTranche is ReentrancyGuard {
     /// @notice Array of payout events for historical tracking
     PayoutEvent[] public payoutHistory;
 
+    /// @notice Array of LP addresses for iteration
+    address[] public lpAddresses;
+
+    /// @notice Mapping to track if LP is in lpAddresses array
+    mapping(address => bool) public isLPRegistered;
+
+    /// @notice Mapping of payout event index to LP address to claimable amount
+    mapping(uint256 => mapping(address => uint256)) public claimablePayout;
+
+    /// @notice Mapping to track if LP has claimed for a specific payout event
+    mapping(uint256 => mapping(address => bool)) public hasClaimed;
+
+    /// @notice Premium token used for payouts
+    IERC20 public payoutToken;
+
     /// @notice Contract owner/admin
     address public owner;
 
@@ -125,6 +140,15 @@ contract InsuranceTranche is ReentrancyGuard {
 
     /// @notice Emitted when AVS consensus validates a depeg
     event AVSConsensusVerified(address indexed asset, bool isDepegged, uint256 avsTimestamp);
+
+    /// @notice Emitted when LP claims their payout
+    event PayoutClaimed(address indexed lp, uint256 indexed payoutIndex, uint256 amount);
+
+    /// @notice Emitted when payout token is set
+    event PayoutTokenSet(address indexed token);
+
+    /// @notice Emitted when ownership is transferred
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
 
     // -----------------------------------------------
     // Errors
@@ -174,15 +198,18 @@ contract InsuranceTranche is ReentrancyGuard {
     // Core Functions
     // -----------------------------------------------
 
-    /// @notice Collect premium from swap fees
+    /// @notice Collect premium from swap fees using the default premium token
     /// @dev Called by authorized hook to deposit portion of swap fees
+    /// @dev DEPRECATED: Use collectPremiumWithToken instead for explicit token specification
+    /// @param token The premium token address
     /// @param amount Amount of premium to collect
-    function collectPremium(uint256 amount) external onlyAuthorizedHook whenNotPaused nonReentrant {
+    function collectPremium(address token, uint256 amount) external onlyAuthorizedHook whenNotPaused nonReentrant {
         require(amount >= MIN_PREMIUM, "InsuranceTranche: premium too small");
+        require(token != address(0), "InsuranceTranche: zero token address");
 
         // Transfer premium from hook to this contract
         // Note: Hook must approve this contract first
-        IERC20(msg.sender).safeTransferFrom(msg.sender, address(this), amount);
+        IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
 
         insurancePoolBalance += amount;
 
@@ -280,7 +307,7 @@ contract InsuranceTranche is ReentrancyGuard {
     }
 
     /// @notice Execute payout to affected LPs when depeg occurs
-    /// @dev Distributes insurance pool pro-rata to LPs based on their shares
+    /// @dev Records claimable amounts for LPs based on their shares. LPs must call claimPayout() to receive funds.
     /// @dev Requires AVS consensus to validate depeg before executing payout
     /// @param asset Address of the depegged asset
     function executePayout(address asset) external onlyOwner whenNotPaused nonReentrant {
@@ -293,6 +320,7 @@ contract InsuranceTranche is ReentrancyGuard {
 
         require(insurancePoolBalance > 0, "InsuranceTranche: insufficient insurance pool");
         require(totalLPShares > 0, "InsuranceTranche: no LPs to pay");
+        require(address(payoutToken) != address(0), "InsuranceTranche: payout token not set");
 
         // Calculate total payout (use entire insurance pool for this event)
         uint256 totalPayout = insurancePoolBalance;
@@ -300,11 +328,26 @@ contract InsuranceTranche is ReentrancyGuard {
         // Track affected LPs
         uint256 affectedLPs = 0;
 
-        // Distribute pro-rata to all active LPs
-        // In production, this would iterate over a list of active LPs
-        // For gas efficiency, consider batch processing or claiming mechanism
+        // Get the payout event index (will be the next index in the array)
+        uint256 payoutIndex = payoutHistory.length;
 
-        // Reset insurance pool
+        // Calculate and record claimable amounts for each LP
+        for (uint256 i = 0; i < lpAddresses.length; i++) {
+            address lp = lpAddresses[i];
+            LPPosition memory position = lpPositions[lp];
+
+            if (position.isActive && position.shares > 0) {
+                // Calculate pro-rata share: (lpShares / totalShares) * totalPayout
+                uint256 lpPayout = (position.shares * totalPayout) / totalLPShares;
+
+                if (lpPayout > 0) {
+                    claimablePayout[payoutIndex][lp] = lpPayout;
+                    affectedLPs++;
+                }
+            }
+        }
+
+        // Reset insurance pool (funds stay in contract until claimed)
         insurancePoolBalance = 0;
 
         // Record payout event
@@ -320,6 +363,36 @@ contract InsuranceTranche is ReentrancyGuard {
 
         emit DepegDetected(asset, currentPrice, assetConfigs[asset].targetPrice, deviation);
         emit PayoutExecuted(asset, totalPayout, affectedLPs, currentPrice, deviation);
+    }
+
+    /// @notice Claim payout for a specific depeg event
+    /// @param payoutIndex Index of the payout event to claim from
+    function claimPayout(uint256 payoutIndex) external nonReentrant whenNotPaused {
+        require(payoutIndex < payoutHistory.length, "InsuranceTranche: invalid payout index");
+        require(!hasClaimed[payoutIndex][msg.sender], "InsuranceTranche: already claimed");
+
+        uint256 amount = claimablePayout[payoutIndex][msg.sender];
+        require(amount > 0, "InsuranceTranche: nothing to claim");
+
+        // Mark as claimed before transfer (CEI pattern)
+        hasClaimed[payoutIndex][msg.sender] = true;
+        claimablePayout[payoutIndex][msg.sender] = 0;
+
+        // Transfer payout to LP
+        payoutToken.safeTransfer(msg.sender, amount);
+
+        emit PayoutClaimed(msg.sender, payoutIndex, amount);
+    }
+
+    /// @notice Get claimable amount for an LP for a specific payout event
+    /// @param lp LP address
+    /// @param payoutIndex Index of the payout event
+    /// @return amount Claimable amount
+    function getClaimableAmount(address lp, uint256 payoutIndex) external view returns (uint256 amount) {
+        if (hasClaimed[payoutIndex][lp]) {
+            return 0;
+        }
+        return claimablePayout[payoutIndex][lp];
     }
 
     /// @notice Execute payout to specific LP
@@ -347,6 +420,12 @@ contract InsuranceTranche is ReentrancyGuard {
 
         LPPosition storage position = lpPositions[lp];
         uint256 oldShares = position.shares;
+
+        // Register LP in the address array if not already registered
+        if (!isLPRegistered[lp]) {
+            lpAddresses.push(lp);
+            isLPRegistered[lp] = true;
+        }
 
         // Update total shares
         if (shares > oldShares) {
@@ -447,7 +526,17 @@ contract InsuranceTranche is ReentrancyGuard {
     /// @param newOwner New owner address
     function transferOwnership(address newOwner) external onlyOwner {
         require(newOwner != address(0), "InsuranceTranche: zero address");
+        address oldOwner = owner;
         owner = newOwner;
+        emit OwnershipTransferred(oldOwner, newOwner);
+    }
+
+    /// @notice Set payout token for insurance claims
+    /// @param _payoutToken Token address for payouts
+    function setPayoutToken(address _payoutToken) external onlyOwner {
+        require(_payoutToken != address(0), "InsuranceTranche: zero address");
+        payoutToken = IERC20(_payoutToken);
+        emit PayoutTokenSet(_payoutToken);
     }
 
     /// @notice Emergency pause
