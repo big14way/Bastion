@@ -162,6 +162,9 @@ contract BastionHook is BaseHook, IAVSConsumer {
     /// @notice Emitted when insurance tranche is set
     event InsuranceTrancheSet(address indexed tranche);
 
+    /// @notice Emitted when ownership is transferred
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+
     // -----------------------------------------------
     // Modifiers
     // -----------------------------------------------
@@ -509,7 +512,7 @@ contract BastionHook is BaseHook, IAVSConsumer {
     /// @notice Set basket configuration for a pool
     /// @param poolId The pool ID
     /// @param config The basket configuration
-    function setBasketConfig(PoolId poolId, BasketConfig memory config) external {
+    function setBasketConfig(PoolId poolId, BasketConfig memory config) external onlyOwner {
         // Validate weights sum to 100%
         require(
             config.stETHWeight + config.cbETHWeight + config.rETHWeight + config.USDeWeight == BASIS_POINTS,
@@ -522,7 +525,7 @@ contract BastionHook is BaseHook, IAVSConsumer {
     /// @notice Set asset type for a currency
     /// @param currency The currency address
     /// @param assetType The asset type
-    function setAssetType(Currency currency, AssetType assetType) external {
+    function setAssetType(Currency currency, AssetType assetType) external onlyOwner {
         assetTypes[currency] = assetType;
     }
 
@@ -542,6 +545,7 @@ contract BastionHook is BaseHook, IAVSConsumer {
     }
 
     /// @notice Collect accumulated premiums and send to insurance tranche
+    /// @dev Requires the hook to hold premium tokens (deposited by admin or received through protocol fees)
     /// @param poolId The pool ID
     function collectInsurancePremium(PoolId poolId) external {
         require(address(insuranceTranche) != address(0), "BastionHook: insurance not set");
@@ -554,6 +558,10 @@ contract BastionHook is BaseHook, IAVSConsumer {
         uint256 premium = (totalFees * insuranceSplit) / BASIS_POINTS;
         uint256 remainingFees = totalFees - premium;
 
+        // Verify hook has sufficient balance to transfer
+        uint256 hookBalance = premiumToken.balanceOf(address(this));
+        require(hookBalance >= premium, "BastionHook: insufficient premium token balance");
+
         // Reset accumulated fees
         accumulatedFees[poolId] = 0;
 
@@ -564,6 +572,15 @@ contract BastionHook is BaseHook, IAVSConsumer {
         }
 
         emit InsurancePremiumCollected(poolId, premium, remainingFees);
+    }
+
+    /// @notice Deposit premium tokens into the hook for insurance collection
+    /// @dev Admin can deposit tokens to fund insurance premiums
+    /// @param amount Amount of premium tokens to deposit
+    function depositPremiumTokens(uint256 amount) external onlyOwner {
+        require(address(premiumToken) != address(0), "BastionHook: premium token not set");
+        require(amount > 0, "BastionHook: zero amount");
+        premiumToken.safeTransferFrom(msg.sender, address(this), amount);
     }
 
     /// @notice Keeper function to check for depegs and trigger payouts
@@ -632,7 +649,9 @@ contract BastionHook is BaseHook, IAVSConsumer {
     /// @param newOwner New owner address
     function transferOwnership(address newOwner) external onlyOwner {
         require(newOwner != address(0), "BastionHook: zero address");
+        address oldOwner = owner;
         owner = newOwner;
+        emit OwnershipTransferred(oldOwner, newOwner);
     }
 
     /// @notice Set Bastion AVS task manager

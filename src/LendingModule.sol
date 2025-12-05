@@ -128,6 +128,9 @@ contract LendingModule is ERC20, ReentrancyGuard {
     /// @notice Emitted when interest is accrued
     event InterestAccrued(address indexed user, uint256 interest, uint256 totalDebt);
 
+    /// @notice Emitted when ownership is transferred
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+
     // -----------------------------------------------
     // Modifiers
     // -----------------------------------------------
@@ -272,6 +275,11 @@ contract LendingModule is ERC20, ReentrancyGuard {
             position.accruedInterest = 0;
             position.borrowedAmount -= principalRepaid;
             totalBorrowed -= principalRepaid;
+        }
+
+        // Add interest earned back to the lending pool (grows pool for lenders)
+        if (interestRepaid > 0) {
+            totalLendingPool += interestRepaid;
         }
 
         position.lastUpdateTime = block.timestamp;
@@ -531,6 +539,8 @@ contract LendingModule is ERC20, ReentrancyGuard {
     /// @param newOwner New owner address
     function transferOwnership(address newOwner) external onlyOwner {
         require(newOwner != address(0), "LendingModule: zero address");
+        address oldOwner = owner;
         owner = newOwner;
+        emit OwnershipTransferred(oldOwner, newOwner);
     }
 }
