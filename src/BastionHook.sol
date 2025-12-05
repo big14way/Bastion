@@ -18,6 +18,7 @@ import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {BastionTaskManager} from "./avs/BastionTaskManager.sol";
+import {ISwapRouter} from "./interfaces/ISwapRouter.sol";
 
 /// @title BastionHook
 /// @notice A Uniswap v4 hook with dynamic fees, basket rebalancing, and insurance integration
@@ -127,6 +128,25 @@ contract BastionHook is BaseHook, IAVSConsumer {
     /// @notice Accumulated swap fees available for insurance premiums per pool
     mapping(PoolId => uint256) public accumulatedFees;
 
+    /// @notice DEX router for rebalancing swaps
+    ISwapRouter public swapRouter;
+
+    /// @notice Token addresses for basket assets
+    address public stETHToken;
+    address public cbETHToken;
+    address public rETHToken;
+    address public USDeToken;
+    address public baseToken; // WETH or stablecoin for swaps
+
+    /// @notice Maximum slippage for rebalancing swaps (basis points)
+    uint256 public maxRebalanceSlippage = 100; // 1% default
+
+    /// @notice Minimum swap amount to prevent dust swaps
+    uint256 public minSwapAmount = 1e15; // 0.001 tokens
+
+    /// @notice Whether rebalancing is enabled
+    bool public rebalancingEnabled = true;
+
     // -----------------------------------------------
     // Enums
     // -----------------------------------------------
@@ -164,6 +184,24 @@ contract BastionHook is BaseHook, IAVSConsumer {
 
     /// @notice Emitted when ownership is transferred
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+
+    /// @notice Emitted when swap router is set
+    event SwapRouterSet(address indexed router);
+
+    /// @notice Emitted when basket tokens are configured
+    event BasketTokensConfigured(address stETH, address cbETH, address rETH, address USDe, address base);
+
+    /// @notice Emitted when rebalancing swap is executed
+    event RebalanceSwapExecuted(
+        PoolId indexed poolId,
+        address indexed tokenIn,
+        address indexed tokenOut,
+        uint256 amountIn,
+        uint256 amountOut
+    );
+
+    /// @notice Emitted when rebalancing settings are updated
+    event RebalancingSettingsUpdated(uint256 maxSlippage, uint256 minSwapAmount, bool enabled);
 
     // -----------------------------------------------
     // Modifiers
@@ -466,23 +504,217 @@ contract BastionHook is BaseHook, IAVSConsumer {
     /// @param poolId The pool ID
     /// @param key The pool key
     function _rebalanceBasket(PoolId poolId, PoolKey calldata key) internal {
-        // In a real implementation, this would:
-        // 1. Calculate which assets are overweight and underweight
-        // 2. Execute swaps through the pool manager to rebalance
-        // 3. Update basket state after rebalancing
-        //
-        // For now, we emit an event to track when rebalancing would occur
-        // The actual swap execution would require integration with the pool manager's
-        // swap functionality and proper accounting of the hook's token balances
+        if (!rebalancingEnabled || address(swapRouter) == address(0)) {
+            emit BasketRebalanced(poolId, block.timestamp);
+            return;
+        }
+
+        BasketConfig memory config = basketConfigs[poolId];
+        BasketState storage state = basketStates[poolId];
+
+        // Skip if no basket configured or no value
+        if (state.totalValue == 0) {
+            emit BasketRebalanced(poolId, block.timestamp);
+            return;
+        }
+
+        // Calculate target amounts for each asset based on weights
+        uint256 targetStETH = (state.totalValue * config.stETHWeight) / BASIS_POINTS;
+        uint256 targetCbETH = (state.totalValue * config.cbETHWeight) / BASIS_POINTS;
+        uint256 targetRETH = (state.totalValue * config.rETHWeight) / BASIS_POINTS;
+        uint256 targetUSDe = (state.totalValue * config.USDeWeight) / BASIS_POINTS;
+
+        // Execute rebalancing swaps for overweight assets
+        _executeRebalanceSwaps(poolId, state, targetStETH, targetCbETH, targetRETH, targetUSDe);
 
         emit BasketRebalanced(poolId, block.timestamp);
+    }
 
-        // TODO: Implement actual rebalancing swaps
-        // This would involve:
-        // - Calculating target amounts for each asset
-        // - Determining swap routes
-        // - Executing swaps via poolManager.swap()
-        // - Handling any slippage or swap failures
+    /// @notice Execute rebalancing swaps for overweight/underweight assets
+    /// @param poolId The pool ID
+    /// @param state Current basket state
+    /// @param targetStETH Target stETH amount
+    /// @param targetCbETH Target cbETH amount
+    /// @param targetRETH Target rETH amount
+    /// @param targetUSDe Target USDe amount
+    function _executeRebalanceSwaps(
+        PoolId poolId,
+        BasketState storage state,
+        uint256 targetStETH,
+        uint256 targetCbETH,
+        uint256 targetRETH,
+        uint256 targetUSDe
+    ) internal {
+        // Find overweight and underweight assets
+        // Overweight assets need to be sold, underweight assets need to be bought
+
+        // Check stETH
+        if (state.stETHBalance > targetStETH && stETHToken != address(0)) {
+            uint256 excess = state.stETHBalance - targetStETH;
+            if (excess >= minSwapAmount) {
+                _executeSwapToBase(poolId, stETHToken, excess);
+                state.stETHBalance = targetStETH;
+            }
+        }
+
+        // Check cbETH
+        if (state.cbETHBalance > targetCbETH && cbETHToken != address(0)) {
+            uint256 excess = state.cbETHBalance - targetCbETH;
+            if (excess >= minSwapAmount) {
+                _executeSwapToBase(poolId, cbETHToken, excess);
+                state.cbETHBalance = targetCbETH;
+            }
+        }
+
+        // Check rETH
+        if (state.rETHBalance > targetRETH && rETHToken != address(0)) {
+            uint256 excess = state.rETHBalance - targetRETH;
+            if (excess >= minSwapAmount) {
+                _executeSwapToBase(poolId, rETHToken, excess);
+                state.rETHBalance = targetRETH;
+            }
+        }
+
+        // Check USDe
+        if (state.USDeBalance > targetUSDe && USDeToken != address(0)) {
+            uint256 excess = state.USDeBalance - targetUSDe;
+            if (excess >= minSwapAmount) {
+                _executeSwapToBase(poolId, USDeToken, excess);
+                state.USDeBalance = targetUSDe;
+            }
+        }
+
+        // Now buy underweight assets with accumulated base token
+        uint256 baseBalance = baseToken != address(0) ? IERC20(baseToken).balanceOf(address(this)) : 0;
+
+        if (baseBalance > 0) {
+            _buyUnderweightAssets(poolId, state, targetStETH, targetCbETH, targetRETH, targetUSDe, baseBalance);
+        }
+    }
+
+    /// @notice Execute a swap from basket asset to base token
+    /// @param poolId Pool ID for event
+    /// @param tokenIn Token to sell
+    /// @param amountIn Amount to sell
+    function _executeSwapToBase(PoolId poolId, address tokenIn, uint256 amountIn) internal {
+        if (baseToken == address(0) || tokenIn == address(0)) return;
+
+        // Approve router
+        IERC20(tokenIn).forceApprove(address(swapRouter), amountIn);
+
+        // Calculate minimum output with slippage protection
+        uint256 expectedOut = swapRouter.getAmountOut(tokenIn, baseToken, amountIn);
+        uint256 minOut = (expectedOut * (BASIS_POINTS - maxRebalanceSlippage)) / BASIS_POINTS;
+
+        // Execute swap
+        uint256 amountOut = swapRouter.swapExactTokensForTokens(
+            tokenIn,
+            baseToken,
+            amountIn,
+            minOut,
+            address(this),
+            block.timestamp + 300 // 5 minute deadline
+        );
+
+        emit RebalanceSwapExecuted(poolId, tokenIn, baseToken, amountIn, amountOut);
+    }
+
+    /// @notice Buy underweight assets with base token
+    /// @param poolId Pool ID
+    /// @param state Basket state
+    /// @param targetStETH Target amounts
+    /// @param targetCbETH Target amounts
+    /// @param targetRETH Target amounts
+    /// @param targetUSDe Target amounts
+    /// @param baseBalance Available base token
+    function _buyUnderweightAssets(
+        PoolId poolId,
+        BasketState storage state,
+        uint256 targetStETH,
+        uint256 targetCbETH,
+        uint256 targetRETH,
+        uint256 targetUSDe,
+        uint256 baseBalance
+    ) internal {
+        // Calculate total deficit
+        uint256 stETHDeficit = state.stETHBalance < targetStETH ? targetStETH - state.stETHBalance : 0;
+        uint256 cbETHDeficit = state.cbETHBalance < targetCbETH ? targetCbETH - state.cbETHBalance : 0;
+        uint256 rETHDeficit = state.rETHBalance < targetRETH ? targetRETH - state.rETHBalance : 0;
+        uint256 USDeDeficit = state.USDeBalance < targetUSDe ? targetUSDe - state.USDeBalance : 0;
+
+        uint256 totalDeficit = stETHDeficit + cbETHDeficit + rETHDeficit + USDeDeficit;
+        if (totalDeficit == 0) return;
+
+        // Buy each underweight asset proportionally
+        if (stETHDeficit > 0 && stETHToken != address(0)) {
+            uint256 buyAmount = (baseBalance * stETHDeficit) / totalDeficit;
+            if (buyAmount >= minSwapAmount) {
+                uint256 received = _executeSwapFromBase(poolId, stETHToken, buyAmount);
+                state.stETHBalance += received;
+            }
+        }
+
+        if (cbETHDeficit > 0 && cbETHToken != address(0)) {
+            uint256 buyAmount = (baseBalance * cbETHDeficit) / totalDeficit;
+            if (buyAmount >= minSwapAmount) {
+                uint256 received = _executeSwapFromBase(poolId, cbETHToken, buyAmount);
+                state.cbETHBalance += received;
+            }
+        }
+
+        if (rETHDeficit > 0 && rETHToken != address(0)) {
+            uint256 buyAmount = (baseBalance * rETHDeficit) / totalDeficit;
+            if (buyAmount >= minSwapAmount) {
+                uint256 received = _executeSwapFromBase(poolId, rETHToken, buyAmount);
+                state.rETHBalance += received;
+            }
+        }
+
+        if (USDeDeficit > 0 && USDeToken != address(0)) {
+            uint256 buyAmount = (baseBalance * USDeDeficit) / totalDeficit;
+            if (buyAmount >= minSwapAmount) {
+                uint256 received = _executeSwapFromBase(poolId, USDeToken, buyAmount);
+                state.USDeBalance += received;
+            }
+        }
+    }
+
+    /// @notice Execute a swap from base token to basket asset
+    /// @param poolId Pool ID for event
+    /// @param tokenOut Token to buy
+    /// @param amountIn Amount of base token to spend
+    /// @return amountOut Amount of tokenOut received
+    function _executeSwapFromBase(PoolId poolId, address tokenOut, uint256 amountIn) internal returns (uint256 amountOut) {
+        if (baseToken == address(0) || tokenOut == address(0)) return 0;
+
+        // Approve router
+        IERC20(baseToken).forceApprove(address(swapRouter), amountIn);
+
+        // Calculate minimum output with slippage protection
+        uint256 expectedOut = swapRouter.getAmountOut(baseToken, tokenOut, amountIn);
+        uint256 minOut = (expectedOut * (BASIS_POINTS - maxRebalanceSlippage)) / BASIS_POINTS;
+
+        // Execute swap
+        amountOut = swapRouter.swapExactTokensForTokens(
+            baseToken,
+            tokenOut,
+            amountIn,
+            minOut,
+            address(this),
+            block.timestamp + 300 // 5 minute deadline
+        );
+
+        emit RebalanceSwapExecuted(poolId, baseToken, tokenOut, amountIn, amountOut);
+    }
+
+    /// @notice Manually trigger rebalancing for a pool
+    /// @dev Can be called by keeper or admin
+    /// @param key The pool key
+    function triggerRebalance(PoolKey calldata key) external {
+        PoolId poolId = key.toId();
+        (bool shouldRebalance,,,,,) = _shouldRebalance(poolId);
+        require(shouldRebalance, "BastionHook: rebalancing not needed");
+        _rebalanceBasket(poolId, key);
     }
 
     /// @notice Calculate absolute difference between two uint256 values
@@ -659,6 +891,50 @@ contract BastionHook is BaseHook, IAVSConsumer {
     function setBastionTaskManager(address _taskManager) external onlyOwner {
         require(_taskManager != address(0), "BastionHook: zero address");
         bastionTaskManager = BastionTaskManager(_taskManager);
+    }
+
+    /// @notice Set swap router for rebalancing
+    /// @param _swapRouter Swap router address
+    function setSwapRouter(address _swapRouter) external onlyOwner {
+        swapRouter = ISwapRouter(_swapRouter);
+        emit SwapRouterSet(_swapRouter);
+    }
+
+    /// @notice Configure basket token addresses
+    /// @param _stETH stETH token address
+    /// @param _cbETH cbETH token address
+    /// @param _rETH rETH token address
+    /// @param _USDe USDe token address
+    /// @param _base Base token (WETH) address
+    function setBasketTokens(
+        address _stETH,
+        address _cbETH,
+        address _rETH,
+        address _USDe,
+        address _base
+    ) external onlyOwner {
+        stETHToken = _stETH;
+        cbETHToken = _cbETH;
+        rETHToken = _rETH;
+        USDeToken = _USDe;
+        baseToken = _base;
+        emit BasketTokensConfigured(_stETH, _cbETH, _rETH, _USDe, _base);
+    }
+
+    /// @notice Update rebalancing settings
+    /// @param _maxSlippage Max slippage in basis points
+    /// @param _minSwapAmount Minimum swap amount
+    /// @param _enabled Whether rebalancing is enabled
+    function setRebalancingSettings(
+        uint256 _maxSlippage,
+        uint256 _minSwapAmount,
+        bool _enabled
+    ) external onlyOwner {
+        require(_maxSlippage <= 500, "BastionHook: slippage too high"); // Max 5%
+        maxRebalanceSlippage = _maxSlippage;
+        minSwapAmount = _minSwapAmount;
+        rebalancingEnabled = _enabled;
+        emit RebalancingSettingsUpdated(_maxSlippage, _minSwapAmount, _enabled);
     }
 
     // -----------------------------------------------

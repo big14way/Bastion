@@ -2,6 +2,32 @@
 
 This guide will help you set up and test the Bastion Protocol locally after pulling the latest changes.
 
+## Complete Protocol Flow
+
+The Bastion Protocol implements this 7-step flow:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    BASTION PROTOCOL FLOW                        │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  1. SETUP     → Deploy contracts, initialize LST basket         │
+│       ↓                                                         │
+│  2. DEPOSIT   → Add liquidity, receive vault shares             │
+│       ↓                                                         │
+│  3. SWAP      → Dynamic fees (0.05%-1%), insurance premiums     │
+│       ↓                                                         │
+│  4. BORROW    → Fixed-rate loan (5% APY) against LP position    │
+│       ↓                                                         │
+│  5. DEPEG     → AVS operators detect & validate depeg (>20%)    │
+│       ↓                                                         │
+│  6. PAYOUT    → Pro-rata insurance distribution to LPs          │
+│       ↓                                                         │
+│  7. EXIT      → Repay loan, withdraw with accrued yield         │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
 ## Prerequisites
 
 1. **Install Foundry** (if not already installed):
