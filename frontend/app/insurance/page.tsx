@@ -1,16 +1,46 @@
 "use client";
 
 import Navigation from "@/components/Navigation";
+import { useInsurance } from "@/hooks/useInsurance";
+import { useAccount } from "wagmi";
+import { ConnectButton } from "@rainbow-me/rainbowkit";
+import { useEffect, useState } from "react";
+import { CONTRACTS } from "@/lib/contracts/addresses";
 
 export default function Insurance() {
-  const insuranceStats = {
-    totalCoverage: 85000,
-    yourCoverage: 4250,
-    poolBalance: 8500,
-    coverageRatio: 85,
-    depegThreshold: 20,
-  };
+  const { isConnected, address } = useAccount();
+  const {
+    poolBalance,
+    totalLPShares,
+    coverageRatio,
+    userCoverage,
+    userShares,
+    hasInsurance,
+    payoutCount,
+    assetCount,
+    isLoading,
+    isError,
+    fetchAssetDetails,
+    fetchPayoutHistory,
+  } = useInsurance();
 
+  const [assetDetails, setAssetDetails] = useState<any[]>([]);
+  const [payoutHistory, setPayoutHistory] = useState<any[]>([]);
+
+  // Fetch asset and payout details
+  useEffect(() => {
+    const loadDetails = async () => {
+      const [assets, payouts] = await Promise.all([
+        fetchAssetDetails(),
+        fetchPayoutHistory(),
+      ]);
+      setAssetDetails(assets);
+      setPayoutHistory(payouts);
+    };
+    loadDetails();
+  }, [assetCount, payoutCount]);
+
+  // Mock data for recent claims and covered assets (can be replaced with real data later)
   const recentClaims = [
     {
       id: 1,
@@ -82,6 +112,8 @@ export default function Insurance() {
     }
   };
 
+  const depegThreshold = 20; // Default 20%
+
   return (
     <div className="min-h-screen">
       <Navigation />
@@ -95,6 +127,19 @@ export default function Insurance() {
           <p className="text-gray-400 text-lg">AVS-secured protection against depeg events for all basket assets</p>
         </div>
 
+        {/* Connect Wallet Message */}
+        {!isConnected && (
+          <div className="glass rounded-2xl p-6 mb-8 border border-yellow-500/30 bg-yellow-500/10">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-bold text-yellow-400 mb-2">Connect Wallet</h3>
+                <p className="text-gray-400">Connect your wallet to view your insurance coverage</p>
+              </div>
+              <ConnectButton />
+            </div>
+          </div>
+        )}
+
         {/* Coverage Overview */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           <div className="glass glass-hover rounded-2xl p-6 border border-white/10">
@@ -103,8 +148,15 @@ export default function Insurance() {
               <span className="text-2xl">🛡️</span>
             </div>
             <p className="text-3xl font-bold text-white">
-              ${insuranceStats.totalCoverage.toLocaleString()}
+              {isLoading ? (
+                <span className="text-gray-500">Loading...</span>
+              ) : isError ? (
+                <span className="text-red-500">Error</span>
+              ) : (
+                `${totalLPShares.toFixed(2)} LP`
+              )}
             </p>
+            <p className="text-xs text-gray-500 mt-1">Total LP shares protected</p>
           </div>
 
           <div className="glass glass-hover rounded-2xl p-6 border border-white/10">
@@ -112,9 +164,21 @@ export default function Insurance() {
               <p className="text-sm text-gray-400 font-medium">Your Coverage</p>
               <span className="text-2xl">👤</span>
             </div>
-            <p className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">
-              ${insuranceStats.yourCoverage.toLocaleString()}
-            </p>
+            {!isConnected ? (
+              <p className="text-sm text-gray-500">Connect wallet</p>
+            ) : (
+              <>
+                <p className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">
+                  ${userCoverage.toFixed(2)}
+                </p>
+                {hasInsurance && (
+                  <p className="text-xs text-green-400 mt-1">✓ Protected</p>
+                )}
+                {userShares > 0 && (
+                  <p className="text-xs text-gray-500 mt-1">{userShares.toFixed(4)} shares</p>
+                )}
+              </>
+            )}
           </div>
 
           <div className="glass glass-hover rounded-2xl p-6 border border-white/10">
@@ -123,7 +187,14 @@ export default function Insurance() {
               <span className="text-2xl">💰</span>
             </div>
             <p className="text-3xl font-bold text-green-400">
-              ${insuranceStats.poolBalance.toLocaleString()}
+              {isLoading ? (
+                <span className="text-gray-500">Loading...</span>
+              ) : (
+                `$${poolBalance.toFixed(2)}`
+              )}
+            </p>
+            <p className="text-xs text-gray-500 mt-1">
+              {poolBalance > 0 ? "Available for payouts" : "Awaiting premium deposits"}
             </p>
           </div>
 
@@ -133,8 +204,11 @@ export default function Insurance() {
               <span className="text-2xl">📊</span>
             </div>
             <p className="text-3xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
-              {insuranceStats.coverageRatio}%
+              {coverageRatio.toFixed(1)}%
             </p>
+            {payoutCount > 0 && (
+              <p className="text-xs text-gray-500 mt-1">{payoutCount} payouts made</p>
+            )}
           </div>
         </div>
 
@@ -148,43 +222,61 @@ export default function Insurance() {
                 <p className="text-gray-400 text-sm mt-1">Real-time monitoring of all basket assets</p>
               </div>
               <div className="p-6">
-                <div className="space-y-4">
-                  {coveredAssets.map((asset, index) => (
-                    <div
-                      key={asset.name}
-                      className="flex items-center justify-between p-5 glass-hover rounded-xl border border-white/10"
-                    >
-                      <div className="flex items-center space-x-4">
-                        <div className={`w-14 h-14 rounded-xl flex items-center justify-center text-white font-bold text-xl shadow-lg ${
-                          index === 0 ? "bg-gradient-to-br from-blue-500 to-cyan-500" :
-                          index === 1 ? "bg-gradient-to-br from-purple-500 to-pink-500" :
-                          index === 2 ? "bg-gradient-to-br from-pink-500 to-rose-500" :
-                          "bg-gradient-to-br from-orange-500 to-amber-500"
-                        }`}>
-                          {asset.name.charAt(0)}
+                {assetCount > 0 ? (
+                  <div className="space-y-4">
+                    {coveredAssets.map((asset, index) => (
+                      <div
+                        key={asset.name}
+                        className="flex items-center justify-between p-5 glass-hover rounded-xl border border-white/10"
+                      >
+                        <div className="flex items-center space-x-4">
+                          <div className={`w-14 h-14 rounded-xl flex items-center justify-center text-white font-bold text-xl shadow-lg ${
+                            index === 0 ? "bg-gradient-to-br from-blue-500 to-cyan-500" :
+                            index === 1 ? "bg-gradient-to-br from-purple-500 to-pink-500" :
+                            index === 2 ? "bg-gradient-to-br from-pink-500 to-rose-500" :
+                            "bg-gradient-to-br from-orange-500 to-amber-500"
+                          }`}>
+                            {asset.name.charAt(0)}
+                          </div>
+                          <div>
+                            <p className="font-bold text-white text-lg">{asset.name}</p>
+                            <p className="text-sm text-gray-400">
+                              Price: <span className="text-white">${asset.currentPrice.toFixed(2)}</span>
+                            </p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="font-bold text-white text-lg">{asset.name}</p>
-                          <p className="text-sm text-gray-400">
-                            Price: <span className="text-white">${asset.currentPrice.toFixed(2)}</span>
+                        <div className="text-right">
+                          <span
+                            className={`px-4 py-2 rounded-lg text-sm font-bold border ${getStatusColor(
+                              asset.status
+                            )}`}
+                          >
+                            {asset.status.toUpperCase()}
+                          </span>
+                          <p className="text-sm text-gray-400 mt-2">
+                            Deviation: <span className="text-white font-semibold">{asset.deviation}%</span>
                           </p>
                         </div>
                       </div>
-                      <div className="text-right">
-                        <span
-                          className={`px-4 py-2 rounded-lg text-sm font-bold border ${getStatusColor(
-                            asset.status
-                          )}`}
-                        >
-                          {asset.status.toUpperCase()}
-                        </span>
-                        <p className="text-sm text-gray-400 mt-2">
-                          Deviation: <span className="text-white font-semibold">{asset.deviation}%</span>
-                        </p>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="py-12 text-center">
+                    <div className="flex flex-col items-center space-y-3">
+                      <div className="w-16 h-16 rounded-full bg-gray-800 flex items-center justify-center">
+                        <span className="text-3xl">📊</span>
+                      </div>
+                      <p className="text-gray-400 font-medium">Monitoring System Active</p>
+                      <p className="text-sm text-gray-500 max-w-md">
+                        Assets will be configured and monitored via Chainlink price feeds once deployed to mainnet
+                      </p>
+                      <div className="mt-4 flex items-center space-x-2 text-xs text-gray-500">
+                        <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
+                        <span>Real-time monitoring ready</span>
                       </div>
                     </div>
-                  ))}
-                </div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -192,7 +284,9 @@ export default function Insurance() {
             <div className="glass rounded-2xl border border-white/10 overflow-hidden">
               <div className="px-8 py-6 border-b border-white/10 bg-gradient-to-r from-green-500/10 to-emerald-500/10">
                 <h2 className="text-2xl font-bold text-white">Recent Claims</h2>
-                <p className="text-gray-400 text-sm mt-1">Historical depeg events and payouts</p>
+                <p className="text-gray-400 text-sm mt-1">
+                  {payoutCount > 0 ? `${payoutCount} total payouts processed` : "No depeg events recorded on-chain"}
+                </p>
               </div>
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-white/10">
@@ -216,27 +310,43 @@ export default function Insurance() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/10">
-                    {recentClaims.map((claim) => (
-                      <tr key={claim.id} className="hover:bg-white/5 transition-colors">
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="font-bold text-white">{claim.asset}</span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400">
-                          {claim.date}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="text-red-400 font-bold">{claim.depegAmount}%</span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-white font-semibold">
-                          ${claim.payout.toLocaleString()}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="px-3 py-1 inline-flex text-xs leading-5 font-bold rounded-lg bg-green-500/20 text-green-400 border border-green-500/30">
-                            {claim.status}
-                          </span>
+                    {payoutCount > 0 && payoutHistory.length > 0 ? (
+                      payoutHistory.map((payout, idx) => (
+                        <tr key={idx} className="hover:bg-white/5 transition-colors">
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className="font-bold text-white">{payout.asset}</span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400">
+                            {new Date(payout.timestamp).toLocaleDateString()}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className="text-red-400 font-bold">{payout.deviation}%</span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-white font-semibold">
+                            ${payout.payout.toLocaleString()}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className="px-3 py-1 inline-flex text-xs leading-5 font-bold rounded-lg bg-green-500/20 text-green-400 border border-green-500/30">
+                              Paid
+                            </span>
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={5} className="px-6 py-12 text-center">
+                          <div className="flex flex-col items-center space-y-3">
+                            <div className="w-16 h-16 rounded-full bg-gray-800 flex items-center justify-center">
+                              <span className="text-3xl">✅</span>
+                            </div>
+                            <p className="text-gray-400 font-medium">No depeg events recorded</p>
+                            <p className="text-sm text-gray-500 max-w-md">
+                              The insurance pool is ready to protect LPs when basket assets depeg beyond 20% threshold
+                            </p>
+                          </div>
                         </td>
                       </tr>
-                    ))}
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -245,6 +355,21 @@ export default function Insurance() {
 
           {/* Coverage Details Sidebar */}
           <div className="space-y-6">
+            {/* On-chain Data Indicator */}
+            <div className="glass rounded-xl p-4 border border-blue-500/30 bg-blue-500/10">
+              <div className="flex items-center space-x-3">
+                <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-blue-400">
+                    {isLoading ? "Fetching on-chain data..." : "Live on Base Sepolia"}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Contract: {CONTRACTS.InsuranceTranche.slice(0, 10)}...
+                  </p>
+                </div>
+              </div>
+            </div>
+
             <div className="glass glass-hover rounded-2xl p-8 border border-white/10">
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-xl font-bold text-white">Coverage Details</h3>
@@ -256,7 +381,7 @@ export default function Insurance() {
                 <div className="p-4 rounded-xl bg-white/5 border border-white/10">
                   <p className="text-sm text-gray-400 mb-2">Depeg Threshold</p>
                   <p className="text-3xl font-bold text-white mb-2">
-                    {insuranceStats.depegThreshold}%
+                    {depegThreshold}%
                   </p>
                   <p className="text-xs text-gray-500 leading-relaxed">
                     Protection triggers when asset depegs beyond this threshold
@@ -267,24 +392,38 @@ export default function Insurance() {
                   <p className="text-sm text-gray-400 mb-3">Coverage Ratio</p>
                   <div className="flex items-center justify-between mb-3">
                     <span className="text-2xl font-bold text-white">
-                      {insuranceStats.coverageRatio}%
+                      {coverageRatio.toFixed(1)}%
                     </span>
                   </div>
                   <div className="w-full bg-white/10 rounded-full h-3 overflow-hidden">
                     <div
                       className="bg-gradient-to-r from-purple-500 to-pink-500 h-3 rounded-full transition-all"
-                      style={{ width: `${insuranceStats.coverageRatio}%` }}
+                      style={{ width: `${Math.min(coverageRatio, 100)}%` }}
                     ></div>
                   </div>
+                  <p className="text-xs text-gray-500 mt-2">
+                    Pool balance relative to total coverage
+                  </p>
                 </div>
 
                 <div className="p-4 rounded-xl bg-white/5 border border-white/10">
                   <p className="text-sm text-gray-400 mb-2">Premium Rate</p>
-                  <p className="text-xl font-bold text-white mb-1">10% of Fees</p>
+                  <p className="text-xl font-bold text-white mb-1">20% of Fees</p>
                   <p className="text-xs text-gray-500 leading-relaxed">
-                    Automatically deducted from swap fees
+                    Automatically collected from swap fees via Uniswap V4 hooks
                   </p>
                 </div>
+
+                {isConnected && userShares > 0 && (
+                  <div className="p-4 rounded-xl bg-gradient-to-br from-blue-500/10 to-cyan-500/10 border border-blue-500/30">
+                    <p className="text-sm text-blue-400 mb-2">Your Position</p>
+                    <p className="text-lg font-bold text-white mb-1">{userShares.toFixed(4)} LP Shares</p>
+                    <p className="text-sm font-semibold text-cyan-400">${userCoverage.toFixed(2)} Coverage</p>
+                    <p className="text-xs text-gray-400 mt-2">
+                      {hasInsurance ? "✓ Actively protected" : "Position registered"}
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -314,7 +453,7 @@ export default function Insurance() {
                   <ul className="text-sm text-gray-300 space-y-2">
                     <li className="flex items-center space-x-2">
                       <span className="text-green-400">•</span>
-                      <span>10% of swap fees fund insurance pool</span>
+                      <span>20% of swap fees fund insurance pool</span>
                     </li>
                     <li className="flex items-center space-x-2">
                       <span className="text-green-400">•</span>

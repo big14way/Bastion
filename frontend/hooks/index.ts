@@ -2,6 +2,7 @@ export { useBasketComposition } from "./useBasketComposition";
 export type { BasketAsset } from "./useBasketComposition";
 export { useInsuranceCoverage } from "./useInsuranceCoverage";
 export { useBorrowingCapacity } from "./useBorrowingCapacity";
+export { useLending } from "./useLending";
 export { useDynamicFee } from "./useDynamicFee";
 export { useDemoMode } from "./useDemoMode";
 export type { DemoState, DemoStep } from "./useDemoMode";

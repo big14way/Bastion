@@ -520,6 +520,13 @@ contract LendingModule is ERC20, ReentrancyGuard {
         paused = false;
     }
 
+    /// @notice Update the authorized hook address
+    /// @param newHook New hook address
+    function updateAuthorizedHook(address newHook) external onlyOwner {
+        require(newHook != address(0), "LendingModule: zero address");
+        authorizedHook = newHook;
+    }
+
     /// @notice Transfer ownership
     /// @param newOwner New owner address
     function transferOwnership(address newOwner) external onlyOwner {
