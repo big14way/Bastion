@@ -1,0 +1,34 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'bastion-operator'
+    static_configs:
+      - targets: ['operator-node:9090']
+        labels:
+          service: 'operator-node'
+
+  - job_name: 'price-feed'
+    static_configs:
+      - targets: ['price-feed-listener:9091']
+        labels:
+          service: 'price-feed'
+
+  - job_name: 'task-responder'
+    static_configs:
+      - targets: ['task-responder:9092']
+        labels:
+          service: 'task-responder'
+
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres:9187']
+        labels:
+          service: 'postgres'
+
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis:9121']
+        labels:
+          service: 'redis'

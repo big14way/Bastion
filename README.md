@@ -1,60 +1,116 @@
 # 🛡️ Bastion Protocol
 
-**Automated DeFi insurance powered by Uniswap V4 Hooks and EigenLayer AVS**
+**Next-Generation DeFi Protocol with Uniswap V4 Hooks, EigenLayer AVS, and Automated Risk Management**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Solidity](https://img.shields.io/badge/Solidity-^0.8.24-blue)](https://soliditylang.org/)
+[![Solidity](https://img.shields.io/badge/Solidity-^0.8.26-blue)](https://soliditylang.org/)
 [![Foundry](https://img.shields.io/badge/Built%20with-Foundry-orange)](https://book.getfoundry.sh/)
 
 ## 🎯 Overview
 
-Bastion is a **multi-asset basket protocol** that protects liquidity providers from depeg events using **automated insurance** powered by **EigenLayer AVS**.
+Bastion Protocol combines cutting-edge DeFi technologies to create secure, yield-generating vaults with automated liquidity provision and insurance protection. The protocol leverages:
 
-### Key Features
+- **Uniswap V4 Hooks** for custom liquidity management
+- **EigenLayer AVS** for decentralized validation
+- **ERC-4626 Vaults** for standardized yield generation
+- **Multi-tiered Insurance** for depositor protection
+- **Real-time Risk Management** with volatility oracles
 
-- **🔄 Dynamic Fees** (0.05% - 1.00%) based on market volatility
-- **🛡️ Automated Insurance** with 20% depeg threshold detection
-- **⚡ EigenLayer AVS** for decentralized depeg verification
-- **💰 Pro-Rata Payouts** distributed fairly to affected LPs
-- **🏦 LP Collateralization** for borrowing against basket positions
-- **📊 Real-Time Dashboard** with interactive demo mode
+## ✅ Current Status
+
+**LIVE ON BASE SEPOLIA TESTNET** with working deposits, withdrawals, and real on-chain data!
+
+### Deployed Contracts (Base Sepolia - Chain ID: 84532)
+
+| Contract | Address | Status |
+|----------|---------|--------|
+| **BastionVault** | [`0xF5c0325F85b1d0606669956895c6876b15bc33b6`](https://sepolia.basescan.org/address/0xF5c0325F85b1d0606669956895c6876b15bc33b6) | ✅ Live |
+| **stETH (Mock)** | [`0x60D36283c134bF0f73B67626B47445455e1FbA9e`](https://sepolia.basescan.org/address/0x60D36283c134bF0f73B67626B47445455e1FbA9e) | ✅ Live |
+| **InsuranceTranche** | `0x4d88c574A9D573a5C62C692e4714F61829d7E4a6` | ✅ Deployed |
+| **LendingModule** | `0x6997d539bC80f514e7B015545E22f3Db5672a5f8` | ✅ Deployed |
+| **VolatilityOracle** | `0xD1c62D4208b10AcAaC2879323f486D1fa5756840` | ✅ Deployed |
 
 ## 🚀 Quick Start
 
-### Frontend Demo (3 steps)
+### Prerequisites
+
+- MetaMask or WalletConnect wallet
+- Base Sepolia ETH (get from [faucet](https://www.alchemy.com/faucets/base-sepolia))
+- Node.js 18+ and npm
+
+### 1. Run the Frontend
 
 ```bash
-# 1. Install dependencies
-cd frontend && npm install
+# Clone and enter the repository
+git clone <repo-url>
+cd bastion
 
-# 2. Start development server
+# Install and run frontend
+cd frontend
+npm install
 npm run dev
 
-# 3. Open http://localhost:3000 and click "Enable Demo Mode"
+# Open http://localhost:3000
 ```
 
-See [QUICK_START.md](QUICK_START.md) for detailed demo instructions.
+### 2. Connect Your Wallet
 
-### Smart Contract Deployment
+1. Open the app at http://localhost:3000
+2. Connect your wallet (MetaMask/WalletConnect)
+3. Switch to Base Sepolia network
+4. You'll see your wallet address in the UI
+
+### 3. Get Test Tokens
+
+The app will show you a command to mint tokens when your balance is zero. Run it in your terminal:
 
 ```bash
-# 1. Setup environment
-cp .env.example .env
-# Edit .env with your PRIVATE_KEY and RPC URLs
+cd bastion
+source .env
+RECIPIENT=0xYourWalletAddress forge script script/MintToUser.s.sol:MintToUser \
+  --rpc-url https://sepolia.base.org --broadcast
+```
 
-# 2. Deploy to Base Sepolia
-forge script script/DeployBastion.s.sol \
-  --rpc-url $BASE_SEPOLIA_RPC_URL \
-  --broadcast \
-  --verify
+### 4. Make a Deposit
 
-# 3. Deploy AVS contracts
-forge script script/DeployAVS.s.sol \
-  --rpc-url $BASE_SEPOLIA_RPC_URL \
-  --broadcast
+1. Navigate to the Vault page
+2. Enter amount to deposit (e.g., 10 stETH)
+3. Click "Deposit" - it will automatically approve and deposit
+4. Watch your vault shares update in real-time!
 
-# 4. Verify contracts
-forge script script/VerifyContracts.s.sol
+### 5. Withdraw Funds
+
+1. Switch to "Withdraw" tab
+2. Enter shares to redeem
+3. Click "Withdraw"
+4. Tokens return to your wallet
+
+## 🧪 Testing & Verification
+
+### Smart Contract Testing
+
+```bash
+# Run all tests
+forge test -vvv
+
+# Run specific test
+forge test --match-path test/BastionVault.t.sol -vvv
+
+# Test coverage
+forge coverage
+
+# Gas report
+forge test --gas-report
+```
+
+### Verify On-Chain State
+
+```bash
+# Check vault balance
+cast call 0xF5c0325F85b1d0606669956895c6876b15bc33b6 "totalAssets()" --rpc-url https://sepolia.base.org | cast --from-wei
+
+# Check user shares
+cast call 0xF5c0325F85b1d0606669956895c6876b15bc33b6 "balanceOf(address)" <your-address> --rpc-url https://sepolia.base.org
 ```
 
 ## 📦 What's Included

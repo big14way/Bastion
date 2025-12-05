@@ -1,0 +1,17 @@
+{
+  "name": "bastion-operator-scripts",
+  "version": "1.0.0",
+  "description": "Bastion operator registration and management scripts",
+  "scripts": {
+    "register": "ts-node register-operator.ts"
+  },
+  "dependencies": {
+    "ethers": "^6.9.0",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.5",
+    "typescript": "^5.3.3",
+    "ts-node": "^10.9.2"
+  }
+}

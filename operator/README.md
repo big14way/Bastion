@@ -1,305 +1,282 @@
 # Bastion AVS Operator
 
-Off-chain operator implementation for the Bastion AVS (Actively Validated Service) on EigenLayer.
+Complete operator infrastructure for the Bastion AVS (Actively Validated Service) on EigenLayer.
+
+## Quick Start
+
+```bash
+# 1. Configure environment
+cp .env.example .env
+# Edit .env with your settings
+
+# 2. Run setup script
+./scripts/setup.sh
+
+# 3. Register as operator
+cd scripts && npm install && npm run register
+
+# 4. Start operator infrastructure
+docker-compose up -d
+
+# 5. View logs
+docker-compose logs -f operator-node
+
+# 6. Check status
+curl http://localhost:8080/status
+```
 
 ## Overview
 
-This TypeScript operator listens for task events from the Bastion AVS smart contracts and performs off-chain computation for three task types:
+This operator infrastructure performs off-chain computation for four task types:
 
-1. **DEPEG_CHECK**: Monitors assets for depeg events using Chainlink price feeds
-2. **VOLATILITY_CALC**: Computes realized volatility from historical price data
-3. **RATE_UPDATE**: Calculates optimal interest rates based on utilization
+1. **Price Verification**: Verifies asset prices from Chainlink feeds
+2. **Depeg Detection**: Monitors assets for depeg events using price feeds
+3. **Volatility Calculation**: Computes realized volatility from historical price data
+4. **Risk Assessment**: Evaluates risk based on price, volatility, and depeg status
 
-The operator signs all responses with ECDSA signatures and submits them back to the AVS smart contracts for aggregation and consensus.
+The operator uses BLS signatures for cryptographic security and submits responses to AVS smart contracts for aggregation and consensus.
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    Bastion AVS Operator                      │
-├─────────────────────────────────────────────────────────────┤
-│                                                               │
-│  ┌──────────────┐         ┌──────────────────────────┐      │
-│  │   Operator   │◄────────│  Event Listener          │      │
-│  │   (Main)     │         │  (NewTaskCreated)        │      │
-│  └──────┬───────┘         └──────────────────────────┘      │
-│         │                                                     │
-│         ├──► Task Handler                                    │
-│         │    ├─► DEPEG_CHECK (Chainlink Prices)             │
-│         │    ├─► VOLATILITY_CALC (Historical Prices)        │
-│         │    └─► RATE_UPDATE (Utilization Curve)            │
-│         │                                                     │
-│         └──► Signature Service (ECDSA)                       │
-│              └─► Submit Response to AVS                      │
-│                                                               │
-└─────────────────────────────────────────────────────────────┘
-```
+The operator infrastructure consists of 8 Docker services:
+
+### Core Services
+
+1. **operator-node** (Port 8080, 9090)
+   - Main AVS operator service
+   - Listens for tasks from TaskManager contract
+   - Submits signed responses on-chain
+   - Exposes REST API and Prometheus metrics
+
+2. **task-responder** (Port 9092)
+   - Processes tasks and generates responses
+   - Handles 4 task types: price verification, depeg detection, volatility calculation, risk assessment
+   - Signs responses with BLS keys
+   - Publishes responses via Redis
+
+3. **price-feed-listener** (Port 9091)
+   - Monitors Chainlink price feeds (stETH/USD, ETH/USD)
+   - Detects depeg events (>20% threshold)
+   - Stores price history in PostgreSQL
+   - Publishes alerts via Redis
+
+4. **bls-keygen**
+   - One-time BLS keypair generation
+   - Saves keys to `/keys/bls_key.json`
+   - Exits after completion
+
+### Infrastructure Services
+
+5. **postgres** (Port 5432) - Operator state and task tracking
+6. **redis** (Port 6379) - Real-time pub/sub messaging
+7. **prometheus** (Port 9090) - Metrics collection
+8. **grafana** (Port 3000) - Metrics visualization
 
 ## Prerequisites
 
-- Node.js v18+ or TypeScript runtime
-- Access to an Ethereum RPC endpoint (WebSocket required for event listening)
-- Private key for an operator wallet registered with the Bastion AVS
-- Sufficient stake in the BastionServiceManager contract
-
-## Installation
-
-```bash
-# Install dependencies
-npm install
-
-# Build TypeScript
-npm run build
-```
+- Docker and Docker Compose
+- Base Sepolia RPC endpoint
+- Operator private key
+- Test ETH for gas (at least 0.1 ETH)
+- Deployed AVS contract addresses
 
 ## Configuration
 
-Create a `.env` file in the `operator/` directory with the following variables:
+Create a `.env` file in the `operator/` directory:
 
 ```bash
-# Required: Ethereum RPC endpoint (must support WebSocket)
-RPC_URL=wss://mainnet.infura.io/ws/v3/YOUR_PROJECT_ID
+# Operator Identity
+OPERATOR_PRIVATE_KEY=0x...
+BLS_KEY_PATH=/keys/bls_key.json
 
-# Required: Operator private key (must be registered with AVS)
-PRIVATE_KEY=0x...
+# Network
+BASE_SEPOLIA_RPC=https://sepolia.base.org
 
-# Required: Contract addresses
+# Contracts
 TASK_MANAGER_ADDRESS=0x...
 SERVICE_MANAGER_ADDRESS=0x...
+DELEGATION_MANAGER_ADDRESS=0x...
+REGISTRY_COORDINATOR_ADDRESS=0x...
+AVS_DIRECTORY_ADDRESS=0x...
 
-# Optional: Chainlink price feed addresses (defaults to mainnet)
-CHAINLINK_ETH_USD=0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419
-CHAINLINK_STETH=0xCfE54B5cD566aB89272946F602D76Ea879CAb4a8
+# Chainlink Feeds
+STETH_USD_FEED=0x...
+ETH_USD_FEED=0x...
 
-# Optional: Logging configuration
-LOG_LEVEL=info  # debug, info, warn, error
+# Database
+POSTGRES_USER=bastion
+POSTGRES_PASSWORD=bastion
+POSTGRES_DB=bastion_operator
 ```
 
 ## Usage
 
-### Development Mode
-
-Run the operator in development mode with auto-recompilation:
+### Starting the Infrastructure
 
 ```bash
-npm run dev
+# Start all services
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Check service status
+docker-compose ps
 ```
 
-### Production Mode
-
-Build and run in production:
+### Stopping the Infrastructure
 
 ```bash
-npm run build
-npm start
+# Stop all services
+docker-compose down
+
+# Stop and remove volumes (WARNING: deletes data)
+docker-compose down -v
 ```
 
-### Docker Deployment
+### API Access
 
 ```bash
-# Build Docker image
-docker build -t bastion-avs-operator .
+# Health check
+curl http://localhost:8080/health
 
-# Run container
-docker run -d \
-  --name bastion-operator \
-  --env-file .env \
-  bastion-avs-operator
+# Operator status
+curl http://localhost:8080/status
+
+# Pending tasks
+curl http://localhost:8080/tasks/pending
+
+# Prometheus metrics
+curl http://localhost:8080/metrics
+
+# Grafana dashboard
+open http://localhost:3000
 ```
 
 ## Task Types
 
-### DEPEG_CHECK
+The operator handles 4 types of tasks:
 
-Monitors assets for depeg events by comparing Chainlink price feeds.
+- **Type 0: Price Verification** - Verifies asset prices from Chainlink feeds
+- **Type 1: Depeg Detection** - Monitors for stablecoin/LSD depegs (>20% threshold)
+- **Type 2: Volatility Calculation** - Calculates realized volatility from price history
+- **Type 3: Risk Assessment** - Evaluates risk based on price, volatility, and depeg status
 
-**Input (taskData)**:
-- `assetAddress` (address): Address of the asset to check
-- `timestamp` (uint256): Task creation timestamp
+See [OPERATOR_SETUP.md](OPERATOR_SETUP.md) for detailed task specifications.
 
-**Output (responseData)**:
-- `isDepegged` (bool): True if asset is depegged
-- `currentPrice` (uint256): Current price ratio (18 decimals)
-- `deviation` (uint256): Deviation from peg in basis points
+## Registration
 
-**Algorithm**:
-1. Fetch ETH/USD price from Chainlink
-2. Fetch asset/USD price from Chainlink
-3. Calculate asset/ETH ratio
-4. Compare to 1:1 peg and compute deviation
-5. Return depeg status if deviation > 5% (500 bps)
+### 1. Fund Operator Wallet
 
-### VOLATILITY_CALC
+Get test ETH from Base Sepolia faucet (at least 0.1 ETH):
+https://www.coinbase.com/faucets/base-ethereum-goerli-faucet
 
-Computes realized volatility from historical price movements.
+### 2. Run Registration Script
 
-**Input (taskData)**:
-- `poolAddress` (address): Address of the pool
-- `timeWindow` (uint256): Time window in seconds
-- `timestamp` (uint256): Task creation timestamp
-
-**Output (responseData)**:
-- `volatility` (uint256): Realized volatility in basis points
-- `timestamp` (uint256): Computation timestamp
-
-**Algorithm**:
-1. Fetch historical price data over the time window
-2. Calculate log returns: ln(P_t / P_{t-1})
-3. Compute standard deviation of returns
-4. Annualize volatility: σ_annual = σ * sqrt(periods_per_year)
-5. Convert to basis points and return
-
-### RATE_UPDATE
-
-Calculates optimal interest rate based on lending pool utilization.
-
-**Input (taskData)**:
-- `lendingModuleAddress` (address): Address of the lending module
-- `utilization` (uint256): Current utilization in basis points
-- `timestamp` (uint256): Task creation timestamp
-
-**Output (responseData)**:
-- `newRate` (uint256): Optimal interest rate in basis points
-- `timestamp` (uint256): Computation timestamp
-
-**Algorithm**:
-Uses a kinked interest rate model (similar to Aave/Compound):
-
-```
-if utilization <= 80%:
-  rate = 2% + (utilization * 4%) / 80%
-else:
-  rate = 2% + 4% + ((utilization - 80%) * 60%) / 20%
+```bash
+cd scripts
+npm install
+npm run register
 ```
 
-## Signature Scheme
+The script will:
+- Register with EigenLayer DelegationManager
+- Register with AVS RegistryCoordinator
+- Register with AVS Directory
+- Verify registration status
 
-The operator uses ECDSA signatures following the Ethereum standard:
+### 3. Start Operator
 
-1. Compute message hash: `keccak256(abi.encodePacked(taskIndex, responseData))`
-2. Sign with Ethereum prefix: `"\x19Ethereum Signed Message:\n32" + messageHash`
-3. Submit signature along with response data to `respondToTask()`
-
-The smart contract verifies signatures using `ecrecover` to ensure only registered operators can submit responses.
+```bash
+docker-compose up -d
+```
 
 ## Monitoring
 
-The operator logs all activities to:
-- Console (colorized output)
-- `combined.log` (all logs)
-- `error.log` (errors only)
+### Grafana Dashboards
 
-### Key Metrics to Monitor
+Access at http://localhost:3000 (admin/admin)
 
-- Task processing latency
-- Signature verification success rate
-- Transaction confirmation times
-- WebSocket connection health
-- Chainlink price feed freshness
+### Prometheus Metrics
 
-### Example Logs
+Key metrics:
+- `bastion_tasks_received_total` - Total tasks received
+- `bastion_tasks_processed_total{status}` - Tasks processed
+- `bastion_operator_balance_eth` - Operator balance
+- `bastion_responses_generated_total{task_type}` - Responses by type
+- `bastion_depeg_events_total` - Depeg events detected
 
+### Logs
+
+```bash
+# All services
+docker-compose logs -f
+
+# Specific service
+docker-compose logs -f operator-node
+
+# Filter for errors
+docker-compose logs -f | grep "ERROR"
 ```
-2024-11-29 20:30:15 [info]: Starting Bastion AVS Operator...
-2024-11-29 20:30:16 [info]: Operator address: 0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb
-2024-11-29 20:30:17 [info]: Operator registered with stake: 1000.0 ETH
-2024-11-29 20:30:17 [info]: Operator is now listening for tasks...
-2024-11-29 20:32:45 [info]: New task created: #42, type: 0
-2024-11-29 20:32:45 [info]: Processing task #42, type: DEPEG_CHECK
-2024-11-29 20:32:46 [info]: DEPEG_CHECK: Checking asset 0x...
-2024-11-29 20:32:47 [info]: DEPEG_CHECK result: price=1000000000000000000, deviation=250bps, depegged=false
-2024-11-29 20:32:48 [info]: Submitted task response transaction: 0xabc...
-2024-11-29 20:32:50 [info]: Task response confirmed in block 18456789
-2024-11-29 20:32:50 [info]: Successfully submitted response for task #42
-```
-
-## Security Considerations
-
-### Private Key Management
-
-- **NEVER** commit private keys to version control
-- Use environment variables or secret management systems
-- Rotate keys regularly
-- Use hardware wallets or HSMs for production
-
-### Operational Security
-
-- Run operators in isolated environments
-- Use minimal base images for Docker containers
-- Implement rate limiting for RPC calls
-- Monitor for abnormal behavior and slashing events
-
-### Signature Security
-
-- Verify message hashes before signing
-- Log all signature operations for audit trails
-- Implement signature replay protection
-- Validate response data before submission
 
 ## Troubleshooting
 
-### Operator not receiving tasks
-
-1. Check WebSocket connection: `wscat -c $RPC_URL`
-2. Verify operator is registered: Call `isOperatorRegistered(address)`
-3. Check stake requirement: Call `getOperatorStake(address)`
-4. Verify task manager contract address
-
-### Signature verification failures
-
-1. Ensure correct message hash construction
-2. Verify wallet address matches registered operator
-3. Check that response data encoding matches contract expectations
-4. Review signature format (v, r, s components)
-
-### Chainlink price feed errors
-
-1. Verify price feed addresses for the correct network
-2. Check price feed freshness (updatedAt timestamp)
-3. Ensure sufficient RPC rate limits for multiple calls
-4. Handle stale price data gracefully
-
-## Development
-
-### Project Structure
-
-```
-operator/
-├── src/
-│   ├── index.ts            # Entry point
-│   ├── operator.ts         # Main operator class
-│   ├── taskHandler.ts      # Task processing logic
-│   ├── signatureService.ts # Signature generation
-│   └── logger.ts           # Winston logger config
-├── package.json
-├── tsconfig.json
-└── README.md
-```
-
-### Adding New Task Types
-
-1. Add task type enum to `BastionTaskManager.sol`
-2. Create handler method in `taskHandler.ts`
-3. Add case in `operator.ts` switch statement
-4. Update documentation
-
-### Testing
-
+### BLS Keys Not Generated
 ```bash
-# Run linter
-npm run lint
-
-# Unit tests (TODO: implement)
-npm test
+docker-compose logs bls-keygen
+docker-compose run bls-keygen
 ```
 
-## References
+### Database Connection Errors
+```bash
+docker-compose ps postgres
+docker-compose logs postgres
+docker-compose exec postgres pg_isready -U bastion
+```
 
-- [EigenLayer AVS Documentation](https://docs.eigenlayer.xyz/eigenlayer/avs-guides/avs-developer-guide)
-- [Incredible Squaring AVS Example](https://github.com/Layr-Labs/incredible-squaring-avs)
+### Tasks Not Being Processed
+```bash
+docker-compose logs operator-node | grep "Listening for"
+curl http://localhost:8080/tasks/pending
+```
+
+### Low Balance Warning
+```bash
+curl http://localhost:8080/status | jq .operator
+# Fund operator address from Base Sepolia faucet
+```
+
+## Database Management
+
+### Access PostgreSQL
+```bash
+docker-compose exec postgres psql -U bastion -d bastion_operator
+```
+
+### Backup Database
+```bash
+docker-compose exec postgres pg_dump -U bastion bastion_operator > backup.sql
+```
+
+### Restore Database
+```bash
+cat backup.sql | docker-compose exec -T postgres psql -U bastion bastion_operator
+```
+
+## Security
+
+- Private keys stored in `.env` (gitignored)
+- BLS keys in Docker volume (not in image)
+- PostgreSQL and Redis not exposed publicly
+- Services run in isolated Docker network
+- Use different keys for testnet and mainnet
+
+## Resources
+
+- [EigenLayer Documentation](https://docs.eigenlayer.xyz)
+- [AVS Developer Guide](https://docs.eigenlayer.xyz/eigenlayer/avs-guides/avs-developer-guide)
+- [Bastion Protocol](../README.md)
+- [Detailed Setup Guide](OPERATOR_SETUP.md)
 - [Chainlink Price Feeds](https://docs.chain.link/data-feeds/price-feeds)
-- [Ethers.js Documentation](https://docs.ethers.org/)
 
-## License
-
-MIT
+For detailed setup instructions and task specifications, see [OPERATOR_SETUP.md](OPERATOR_SETUP.md).

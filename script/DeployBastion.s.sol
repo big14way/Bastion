@@ -16,6 +16,7 @@ import {LendingModule} from "../src/LendingModule.sol";
 import {BastionVault} from "../src/BastionVault.sol";
 import {VolatilityOracle} from "../src/VolatilityOracle.sol";
 import {MockERC20} from "../src/mocks/MockERC20.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import {HookMiner} from "../test/utils/HookMiner.sol";
 
@@ -93,13 +94,8 @@ contract DeployBastion is Script {
         console2.log("LendingModule:", lendingModule);
 
         // Step 8: Deploy BastionVault
-        address[] memory assets = new address[](4);
-        assets[0] = stETH;
-        assets[1] = cbETH;
-        assets[2] = rETH;
-        assets[3] = USDe;
-
-        bastionVault = address(new BastionVault(assets, "Bastion Vault", "bstVault"));
+        // BastionVault accepts a single base asset (stETH as the primary deposit asset)
+        bastionVault = address(new BastionVault(IERC20(stETH), "Bastion Vault", "bstVault"));
         console2.log("BastionVault:", bastionVault);
 
         // Step 9: Initialize pool with hook

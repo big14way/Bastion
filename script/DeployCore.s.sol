@@ -9,6 +9,7 @@ import {BastionVault} from "../src/BastionVault.sol";
 import {VolatilityOracle} from "../src/VolatilityOracle.sol";
 import {MockERC20} from "../src/mocks/MockERC20.sol";
 import {IVolatilityOracle} from "../src/interfaces/IVolatilityOracle.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /**
  * @title DeployCore
@@ -93,13 +94,12 @@ contract DeployCore is Script {
 
         // Deploy BastionVault
         console2.log("\nDeploying BastionVault...");
-        address[] memory assets = new address[](4);
-        assets[0] = stETH;
-        assets[1] = cbETH;
-        assets[2] = rETH;
-        assets[3] = USDe;
-
-        BastionVault vault = new BastionVault(assets, "Bastion Vault", "bstVault");
+        // BastionVault expects a single IERC20 base asset (stETH) as per ERC-4626
+        BastionVault vault = new BastionVault(
+            IERC20(stETH),
+            "Bastion Vault",
+            "bstVault"
+        );
         bastionVault = address(vault);
         console2.log("  BastionVault:", bastionVault);
 

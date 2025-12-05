@@ -1,0 +1,164 @@
+═════════════════════════════════════════════════════════════════════════════
+                        BASTION VAULT DEPOSIT FLOW
+═════════════════════════════════════════════════════════════════════════════
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ USER INITIATES DEPOSIT                                                      │
+│ vault.deposit(1000 stETH, userAddress)                                      │
+└──────────────────────────┬──────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 1. CALCULATE DEPOSIT FEE                                                    │
+│    fee = (1000 * 10000) / 10000 = 10 stETH                                  │
+│    assetsAfterFee = 1000 - 10 = 990 stETH                                   │
+│    (Assuming 1% deposit fee)                                                │
+└──────────────────────────┬──────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 2. VALIDATE AND CALCULATE SHARES                                            │
+│    shares = previewDeposit(1000 stETH)                                      │
+│    shares = convertToShares(990 stETH)                                      │
+│    shares = 990 (assuming 1:1 ratio on first deposit)                       │
+└──────────────────────────┬──────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 3. TRANSFER ASSETS FROM USER                                                │
+│    ┌──────────────────────────────────────────────────────────────────┐    │
+│    │ USER WALLET        stETH Balance: 1000 →  990                   │    │
+│    │ VAULT CONTRACT     stETH Balance: 0   →  1000                   │    │
+│    └──────────────────────────────────────────────────────────────────┘    │
+└──────────────────────────┬──────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 4. TRANSFER FEE TO RECIPIENT                                                │
+│    ┌──────────────────────────────────────────────────────────────────┐    │
+│    │ VAULT CONTRACT     stETH Balance: 1000 →  990                   │    │
+│    │ FEE RECIPIENT      stETH Balance: 0   →  10                     │    │
+│    └──────────────────────────────────────────────────────────────────┘    │
+└──────────────────────────┬──────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 5. MINT VAULT SHARES TO USER                                                │
+│    ┌──────────────────────────────────────────────────────────────────┐    │
+│    │ USER WALLET        bstETH Balance: 0   →  990                   │    │
+│    │ VAULT TOTAL SUPPLY         Total: 0   →  990                   │    │
+│    └──────────────────────────────────────────────────────────────────┘    │
+└──────────────────────────┬──────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 6. ALLOCATE TO BASKET ASSETS                                                │
+│                                                                             │
+│    Basket Configuration:                                                    │
+│    • cbETH: 4000 bps (40%)                                                  │
+│    • rETH:  3500 bps (35%)                                                  │
+│    • USDe: 2500 bps (25%)                                                   │
+│    • totalWeight = 10000 bps                                                │
+│                                                                             │
+│    For each asset:                                                          │
+│      allocation = (990 * weight) / 10000                                    │
+│                                                                             │
+│    ┌───────────────────────────────────────┬──────────────────────────┐    │
+│    │ Basket Asset   │ Weight │ Allocation │ New Balance             │    │
+│    ├───────────────────────────────────────┼──────────────────────────┤    │
+│    │ cbETH          │ 4000   │ 396        │ 0 + 396 = 396          │    │
+│    │ rETH           │ 3500   │ 346.5      │ 0 + 346.5 = 346.5      │    │
+│    │ USDe           │ 2500   │ 247.5      │ 0 + 247.5 = 247.5      │    │
+│    └───────────────────────────────────────┴──────────────────────────┘    │
+│                                                                             │
+│    Note: In testnet, these are account balance updates ONLY.               │
+│    In production, would execute actual DEX swaps.                          │
+└──────────────────────────┬──────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 7. EMIT DEPOSIT EVENT AND RETURN                                            │
+│    event Deposit(user, receiver, assets, shares)                            │
+│    Return: 990 shares                                                       │
+└──────────────────────────┬──────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ FINAL STATE                                                                 │
+│                                                                             │
+│ ┌─── User ──────────────────────────────────────────────────────────────┐  │
+│ │ stETH:   1000 → 990 (spent 1000, got back 10 fee... wait, no!)       │  │
+│ │          Actually: sent 1000, net -1000                              │  │
+│ │ bstETH:  0 → 990 (vault shares)                                      │  │
+│ └────────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+│ ┌─── Vault ─────────────────────────────────────────────────────────────┐  │
+│ │ stETH held:        990                                                │  │
+│ │ Total shares:      990                                                │  │
+│ │ Basket Assets:                                                        │  │
+│ │   • cbETH:         396 (tracked only)                                 │  │
+│ │   • rETH:          346.5 (tracked only)                               │  │
+│ │   • USDe:          247.5 (tracked only)                               │  │
+│ └────────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+│ ┌─── Fee Recipient ─────────────────────────────────────────────────────┐  │
+│ │ stETH:   0 → 10 (fee collected)                                       │  │
+│ └────────────────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+
+═════════════════════════════════════════════════════════════════════════════
+                      WITHDRAW FLOW (Reverse Process)
+═════════════════════════════════════════════════════════════════════════════
+
+User calls: vault.withdraw(900 stETH, userAddress, userAddress)
+
+1. Calculate withdrawal fee
+   withdrawalFee = (900 * fee%) / 10000
+   
+2. Calculate shares needed
+   shares = previewWithdraw(900 stETH)
+   
+3. Verify user has sufficient shares
+   
+4. Burn shares from user
+   _burn(userAddress, shares)
+   
+5. Withdraw from basket
+   _withdrawFromBasket(900 + fee)
+   
+   For each basket asset (proportional to weight):
+     toWithdraw = (needed * weight) / totalWeight
+     basketAsset.balance -= toWithdraw
+   
+6. Transfer withdrawal fee
+   
+7. Transfer assets to receiver
+   
+User receives: (900 - withdrawalFee) stETH
+
+
+═════════════════════════════════════════════════════════════════════════════
+                         KEY FORMULAS
+═════════════════════════════════════════════════════════════════════════════
+
+Fee Calculations:
+  depositFee = (assets * depositFeeRate) / BASIS_POINTS
+  withdrawalFee = (assets * withdrawalFeeRate) / BASIS_POINTS
+  
+  WHERE BASIS_POINTS = 10000
+
+Share Calculations:
+  convertToShares(assets) = (assets * totalSupply) / totalAssets
+  convertToAssets(shares) = (shares * totalAssets) / totalSupply
+  
+ERC-4626 Preview Functions:
+  previewDeposit(assets) = convertToShares(assets - depositFee(assets))
+  previewMint(shares) = convertToAssets(shares) + depositFee(convertToAssets(shares))
+  previewWithdraw(assets) = convertToShares(assets + withdrawalFee(assets))
+  previewRedeem(shares) = convertToAssets(shares) - withdrawalFee(convertToAssets(shares))
+
+Basket Allocation:
+  FOR EACH basketAsset:
+    allocation = (depositedAmount * basketAsset.weight) / totalWeight
+

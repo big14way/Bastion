@@ -1,0 +1,26 @@
+{
+  "name": "bastion-task-responder",
+  "version": "1.0.0",
+  "description": "Bastion Task Response Service",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts"
+  },
+  "dependencies": {
+    "ethers": "^6.9.0",
+    "pg": "^8.11.3",
+    "redis": "^4.6.11",
+    "prom-client": "^15.1.0",
+    "dotenv": "^16.3.1",
+    "winston": "^3.11.0",
+    "@noble/curves": "^1.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.5",
+    "@types/pg": "^8.10.9",
+    "typescript": "^5.3.3",
+    "ts-node": "^10.9.2"
+  }
+}
