@@ -125,6 +125,9 @@ contract LendingModule is ERC20, ReentrancyGuard {
     /// @notice Emitted when lending pool is funded
     event PoolFunded(address indexed funder, uint256 amount, uint256 newTotal);
 
+    /// @notice Emitted when lending pool is withdrawn from
+    event PoolWithdrawn(address indexed withdrawer, uint256 amount, uint256 newTotal);
+
     /// @notice Emitted when interest is accrued
     event InterestAccrued(address indexed user, uint256 interest, uint256 totalDebt);
 
@@ -503,6 +506,31 @@ contract LendingModule is ERC20, ReentrancyGuard {
         _mint(msg.sender, amount);
 
         emit PoolFunded(msg.sender, amount, totalLendingPool);
+    }
+
+    /// @notice Withdraw from the lending pool (admin only)
+    /// @dev Can only withdraw funds not currently borrowed
+    /// @param amount Amount of stablecoins to withdraw
+    function withdrawFromPool(uint256 amount) external onlyOwner {
+        require(amount > 0, "LendingModule: zero amount");
+
+        // Calculate available liquidity (pool - borrowed)
+        uint256 availableLiquidity = totalLendingPool - totalBorrowed;
+        require(amount <= availableLiquidity, "LendingModule: insufficient liquidity");
+
+        // Check admin has enough pool tokens to burn
+        require(balanceOf(msg.sender) >= amount, "LendingModule: insufficient pool tokens");
+
+        // Update state
+        totalLendingPool -= amount;
+
+        // Burn pool tokens from admin
+        _burn(msg.sender, amount);
+
+        // Transfer stablecoins to admin
+        stablecoin.safeTransfer(msg.sender, amount);
+
+        emit PoolWithdrawn(msg.sender, amount, totalLendingPool);
     }
 
     /// @notice Set default interest rate
