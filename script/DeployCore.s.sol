@@ -88,7 +88,12 @@ contract DeployCore is Script {
 
         // Deploy LendingModule
         console2.log("\nDeploying LendingModule...");
-        LendingModule lending = new LendingModule();
+        // Constructor: (address _authorizedHook, address _stablecoin, uint256 _defaultInterestRate)
+        LendingModule lending = new LendingModule(
+            bastionHook,  // Authorized hook (placeholder for now)
+            USDC,         // Stablecoin for borrowing
+            500           // 5% APY default interest rate
+        );
         lendingModule = address(lending);
         console2.log("  LendingModule:", lendingModule);
 
