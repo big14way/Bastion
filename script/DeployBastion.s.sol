@@ -15,6 +15,7 @@ import {InsuranceTranche} from "../src/InsuranceTranche.sol";
 import {LendingModule} from "../src/LendingModule.sol";
 import {BastionVault} from "../src/BastionVault.sol";
 import {VolatilityOracle} from "../src/VolatilityOracle.sol";
+import {IVolatilityOracle} from "../src/interfaces/IVolatilityOracle.sol";
 import {MockERC20} from "../src/mocks/MockERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
@@ -44,13 +45,14 @@ contract DeployBastion is Script {
     address public USDe;
     address public USDC;
 
-    // Hook configuration
+    // Hook configuration - must match BastionHook.getHookPermissions()
     uint160 public constant HOOK_FLAGS =
         uint160(
             Hooks.BEFORE_SWAP_FLAG |
             Hooks.AFTER_SWAP_FLAG |
-            Hooks.BEFORE_ADD_LIQUIDITY_FLAG |
-            Hooks.AFTER_ADD_LIQUIDITY_FLAG
+            Hooks.AFTER_ADD_LIQUIDITY_FLAG |
+            Hooks.AFTER_REMOVE_LIQUIDITY_FLAG |
+            Hooks.AFTER_DONATE_FLAG
         );
 
     // Pool configuration
@@ -90,7 +92,12 @@ contract DeployBastion is Script {
         BastionHook(bastionHook).setInsuranceTranche(insuranceTranche);
 
         // Step 7: Deploy LendingModule
-        lendingModule = address(new LendingModule());
+        // Constructor: (address _authorizedHook, address _stablecoin, uint256 _defaultInterestRate)
+        lendingModule = address(new LendingModule(
+            bastionHook,  // Authorized hook for collateral registration
+            USDC,         // Stablecoin for borrowing
+            500           // 5% APY default interest rate
+        ));
         console2.log("LendingModule:", lendingModule);
 
         // Step 8: Deploy BastionVault
@@ -173,7 +180,7 @@ contract DeployBastion is Script {
         // Deploy hook using CREATE2 with mined salt
         BastionHook hook = new BastionHook{salt: salt}(
             IPoolManager(_poolManager),
-            VolatilityOracle(_oracle)
+            IVolatilityOracle(_oracle)
         );
 
         require(address(hook) == hookAddress, "Hook address mismatch");
