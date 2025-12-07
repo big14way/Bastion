@@ -234,7 +234,7 @@ export function useAssetDepegStatus(assets: string[]) {
 
   const depegStatuses = data?.map((result, index) => {
     if (result?.status === "success") {
-      const [isDepegged, currentPrice, deviation] = result.result as [
+      const [isDepegged, currentPrice, deviation] = result.result as unknown as [
         boolean,
         bigint,
         bigint
