@@ -22,7 +22,6 @@ export default function Insurance() {
     assetCount,
     isLoading,
     isError,
-    fetchAssetDetails,
     fetchPayoutHistory,
     claimPayout,
     isClaimPending,
@@ -34,17 +33,12 @@ export default function Insurance() {
   // Fetch detailed payout information
   const { payouts, isLoading: isPayoutsLoading, refetch: refetchPayouts } = usePayoutDetails(payoutCount);
 
-  const [assetDetails, setAssetDetails] = useState<any[]>([]);
   const [payoutHistory, setPayoutHistory] = useState<any[]>([]);
 
   // Fetch asset and payout details
   useEffect(() => {
     const loadDetails = async () => {
-      const [assets, payouts] = await Promise.all([
-        fetchAssetDetails(),
-        fetchPayoutHistory(),
-      ]);
-      setAssetDetails(assets);
+      const payouts = await fetchPayoutHistory();
       setPayoutHistory(payouts);
     };
     loadDetails();
