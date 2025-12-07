@@ -178,7 +178,7 @@ export function useInsurance() {
   };
 
   // Get claimable amount for a payout
-  const getClaimableAmount = async (payoutIndex: number) => {
+  const getClaimableAmount = async (_payoutIndex: number) => {
     if (!address) return 0;
 
     // This would use readContract but simplified for now

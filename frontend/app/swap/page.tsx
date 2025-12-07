@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Navigation from "@/components/Navigation";
 import { useSwap } from "@/hooks";
 import { useAccount } from "wagmi";
-import { CONTRACTS } from "@/lib/contracts/addresses";
+// import { CONTRACTS } from "@/lib/contracts/addresses";
 
 export default function Swap() {
   const [amountIn, setAmountIn] = useState("");
@@ -23,7 +23,7 @@ export default function Swap() {
     feePercentage,
     insuranceFeePercentage,
     allowance,
-    needsApproval,
+    // needsApproval,
     getQuote,
     swap,
     isPending,

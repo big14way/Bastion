@@ -3,7 +3,8 @@
 import { useState, useEffect } from "react";
 import Navigation from "@/components/Navigation";
 import { useVault } from "@/hooks";
-import { useAccount, useBalance } from "wagmi";
+import { useAccount } from "wagmi";
+// import { useBalance } from "wagmi";
 
 export default function Vault() {
   const [tab, setTab] = useState<"deposit" | "withdraw">("deposit");
@@ -21,8 +22,8 @@ export default function Vault() {
     tokenSymbol,
     tokenBalance,
     allowance,
-    needsApproval,
-    approve,
+    // needsApproval,
+    // approve,
     deposit,
     withdraw,
     isPending,

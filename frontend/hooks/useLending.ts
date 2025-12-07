@@ -7,7 +7,8 @@ import { CONTRACTS } from "@/lib/contracts/addresses";
 import { LendingModuleABI, ERC20ABI } from "@/lib/contracts/abis";
 
 export function useLending() {
-  const { address, isConnected } = useAccount();
+  const { address } = useAccount();
+  // const { isConnected } = useAccount();
   const [borrowAmount, setBorrowAmount] = useState("");
   const [repayAmount, setRepayAmount] = useState("");
 

@@ -55,32 +55,32 @@ export default function Insurance() {
   }, [isClaimConfirmed, refetchPayouts]);
 
   // Mock data for recent claims and covered assets (can be replaced with real data later)
-  const recentClaims = [
-    {
-      id: 1,
-      asset: "USDe",
-      date: "2024-11-15",
-      depegAmount: 25,
-      payout: 2500,
-      status: "Paid",
-    },
-    {
-      id: 2,
-      asset: "stETH",
-      date: "2024-10-28",
-      depegAmount: 22,
-      payout: 1800,
-      status: "Paid",
-    },
-    {
-      id: 3,
-      asset: "cbETH",
-      date: "2024-09-12",
-      depegAmount: 21,
-      payout: 1200,
-      status: "Paid",
-    },
-  ];
+  // const recentClaims = [
+  //   {
+  //     id: 1,
+  //     asset: "USDe",
+  //     date: "2024-11-15",
+  //     depegAmount: 25,
+  //     payout: 2500,
+  //     status: "Paid",
+  //   },
+  //   {
+  //     id: 2,
+  //     asset: "stETH",
+  //     date: "2024-10-28",
+  //     depegAmount: 22,
+  //     payout: 1800,
+  //     status: "Paid",
+  //   },
+  //   {
+  //     id: 3,
+  //     asset: "cbETH",
+  //     date: "2024-09-12",
+  //     depegAmount: 21,
+  //     payout: 1200,
+  //     status: "Paid",
+  //   },
+  // ];
 
   const coveredAssets = [
     {

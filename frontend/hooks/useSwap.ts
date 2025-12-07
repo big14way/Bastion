@@ -1,5 +1,6 @@
 import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
-import { parseEther, parseUnits, formatEther, formatUnits } from "viem";
+import { parseUnits, formatEther, formatUnits } from "viem";
+// import { parseEther } from "viem";
 import { useEffect, useState } from "react";
 import { CONTRACTS } from "@/lib/contracts/addresses";
 import { SimpleSwapABI, ERC20ABI } from "@/lib/contracts/abis";
