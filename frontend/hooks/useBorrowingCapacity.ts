@@ -43,12 +43,6 @@ export function useBorrowingCapacity() {
           {
             address: CONTRACTS.LendingModule,
             abi: LendingModuleABI,
-            functionName: "LTV_RATIO",
-            args: [],
-          },
-          {
-            address: CONTRACTS.LendingModule,
-            abi: LendingModuleABI,
             functionName: "totalLendingPool",
             args: [],
           },
@@ -92,21 +86,18 @@ export function useBorrowingCapacity() {
       ? Number(data[4].result) / 100 // Convert basis points to percentage
       : 5.0; // Default 5%
 
-  // LTV ratio (in basis points, 7000 = 70%)
-  const maxLTV =
-    data?.[5]?.status === "success"
-      ? Number(data[5].result) / 100 // Convert basis points to percentage
-      : 70.0;
+  // LTV ratio hardcoded (70%)
+  const maxLTV = 70.0;
 
   // Pool statistics
   const totalPool =
-    data?.[6]?.status === "success"
-      ? Number(formatEther(data[6].result as bigint))
+    data?.[5]?.status === "success"
+      ? Number(formatEther(data[5].result as bigint))
       : 0;
 
   const totalBorrowed =
-    data?.[7]?.status === "success"
-      ? Number(formatEther(data[7].result as bigint))
+    data?.[6]?.status === "success"
+      ? Number(formatEther(data[6].result as bigint))
       : 0;
 
   // Calculate current LTV
