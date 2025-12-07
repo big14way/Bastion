@@ -640,4 +640,74 @@ contract InsuranceTranche is ReentrancyGuard {
 
         return depegged;
     }
+
+    // -----------------------------------------------
+    // Test Functions (TESTNET ONLY)
+    // -----------------------------------------------
+
+    /// @notice Test function to manually fund insurance pool (TESTNET ONLY)
+    /// @dev Allows owner to fund pool with any ERC20 token for testing purposes
+    /// @param token Token to fund with
+    /// @param amount Amount to fund
+    function testFundPool(address token, uint256 amount) external onlyOwner {
+        require(token != address(0), "InsuranceTranche: zero address");
+        require(amount > 0, "InsuranceTranche: zero amount");
+
+        IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
+        insurancePoolBalance += amount;
+
+        emit PremiumCollected(msg.sender, amount, insurancePoolBalance);
+    }
+
+    /// @notice Test function to manually create payout (TESTNET ONLY - bypasses AVS)
+    /// @dev Creates a payout event without requiring AVS consensus or oracle validation
+    /// @param asset Asset that "depegged"
+    /// @param mockPrice Mock price to record
+    /// @param mockDeviation Mock deviation to record (in basis points)
+    function testExecutePayout(address asset, uint256 mockPrice, uint256 mockDeviation)
+        external
+        onlyOwner
+        whenNotPaused
+        nonReentrant
+    {
+        require(insurancePoolBalance > 0, "InsuranceTranche: insufficient insurance pool");
+        require(totalLPShares > 0, "InsuranceTranche: no LPs to pay");
+        require(address(payoutToken) != address(0), "InsuranceTranche: payout token not set");
+
+        uint256 totalPayout = insurancePoolBalance;
+        uint256 payoutIndex = payoutHistory.length;
+
+        // Track affected LPs
+        uint256 affectedLPs = 0;
+
+        // Record payout for all active LPs
+        for (uint256 i = 0; i < lpAddresses.length; i++) {
+            address lp = lpAddresses[i];
+            LPPosition storage position = lpPositions[lp];
+
+            if (position.isActive && position.shares > 0) {
+                uint256 lpPayout = (totalPayout * position.shares) / totalLPShares;
+                if (lpPayout > 0) {
+                    claimablePayout[payoutIndex][lp] = lpPayout;
+                    affectedLPs++;
+                }
+            }
+        }
+
+        // Reset insurance pool (funds stay in contract until claimed)
+        insurancePoolBalance = 0;
+
+        // Record payout event
+        payoutHistory.push(
+            PayoutEvent({
+                asset: asset,
+                totalPayout: totalPayout,
+                timestamp: block.timestamp,
+                price: mockPrice,
+                deviation: mockDeviation
+            })
+        );
+
+        emit PayoutExecuted(asset, totalPayout, affectedLPs, mockPrice, mockDeviation);
+    }
 }

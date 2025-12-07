@@ -125,6 +125,7 @@ export function useVault() {
   useEffect(() => {
     if (isSuccess) {
       console.log("Refetching vault data after successful transaction...");
+      // Immediate refetch
       refetchTotalAssets();
       refetchTotalSupply();
       refetchUserShares();
@@ -133,6 +134,30 @@ export function useVault() {
       refetchTokenBalance();
       refetchAllowance();
       setNeedsApproval(false);
+
+      // Delayed refetch to account for blockchain state propagation
+      setTimeout(() => {
+        console.log("Delayed refetch for blockchain state update...");
+        refetchTotalAssets();
+        refetchTotalSupply();
+        refetchUserShares();
+        refetchMaxRedeem();
+        refetchUserAssets();
+        refetchTokenBalance();
+        refetchAllowance();
+      }, 2000);
+
+      // Another refetch after 5 seconds for safety
+      setTimeout(() => {
+        console.log("Final refetch...");
+        refetchTotalAssets();
+        refetchTotalSupply();
+        refetchUserShares();
+        refetchMaxRedeem();
+        refetchUserAssets();
+        refetchTokenBalance();
+        refetchAllowance();
+      }, 5000);
     }
   }, [isSuccess, refetchTotalAssets, refetchTotalSupply, refetchUserShares, refetchMaxRedeem, refetchUserAssets, refetchTokenBalance, refetchAllowance]);
 

@@ -233,11 +233,19 @@ export default function Vault() {
                   </p>
                 )}
 
-                {isSuccess && (
-                  <div className="glass rounded-xl p-4 border border-green-500/30 bg-green-500/10">
+                {isSuccess && hash && (
+                  <div className="glass rounded-xl p-4 border border-green-500/30 bg-green-500/10 space-y-2">
                     <p className="text-sm text-green-400 text-center">
                       Transaction successful! Your {tab} has been completed.
                     </p>
+                    <a
+                      href={`https://sepolia.basescan.org/tx/${hash}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block text-center text-xs text-blue-400 hover:text-blue-300 underline"
+                    >
+                      View on BaseScan →
+                    </a>
                   </div>
                 )}
               </form>

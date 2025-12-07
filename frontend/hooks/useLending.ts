@@ -181,6 +181,18 @@ export function useLending() {
       // Immediately refetch data
       refetch();
 
+      // Delayed refetch to account for blockchain state propagation
+      setTimeout(() => {
+        console.log("Delayed refetch for lending data...");
+        refetch();
+      }, 2000);
+
+      // Another refetch after 5 seconds for safety
+      setTimeout(() => {
+        console.log("Final refetch for lending data...");
+        refetch();
+      }, 5000);
+
       // Clear input fields after successful transaction
       if (isBorrowConfirmed) {
         setBorrowAmount("");
@@ -279,6 +291,10 @@ export function useLending() {
     isBorrowConfirmed,
     isRepayConfirmed,
     needsApproval: repayAmount ? parseEther(repayAmount) > allowanceRaw : false,
+
+    // Transaction hashes
+    borrowTxHash,
+    repayTxHash,
 
     // Errors
     borrowError,

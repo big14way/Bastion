@@ -1,7 +1,8 @@
-import { useReadContracts, useAccount } from "wagmi";
+import { useReadContracts, useAccount, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
 import { CONTRACTS } from "@/lib/contracts/addresses";
-import { InsuranceTrancheABI } from "@/lib/contracts/abis";
+import { InsuranceTrancheABI, ERC20ABI } from "@/lib/contracts/abis";
 import { formatEther } from "viem";
+import { useEffect } from "react";
 
 export function useInsurance() {
   const { address } = useAccount();
@@ -31,6 +32,19 @@ export function useInsurance() {
         address: CONTRACTS.InsuranceTranche,
         abi: InsuranceTrancheABI,
         functionName: "getConfiguredAssetCount",
+      },
+      // Collected premium tokens
+      {
+        address: CONTRACTS.stETH,
+        abi: ERC20ABI,
+        functionName: "balanceOf",
+        args: [CONTRACTS.InsuranceTranche],
+      },
+      {
+        address: CONTRACTS.USDC,
+        abi: ERC20ABI,
+        functionName: "balanceOf",
+        args: [CONTRACTS.InsuranceTranche],
       },
       // User position (if connected)
       ...(address
@@ -63,10 +77,20 @@ export function useInsurance() {
   const assetCount =
     data?.[3]?.status === "success" ? Number(data[3].result) : 0;
 
+  const stETHBalance =
+    data?.[4]?.status === "success"
+      ? Number(formatEther(data[4].result as bigint))
+      : 0;
+
+  const usdcBalance =
+    data?.[5]?.status === "success"
+      ? Number(formatEther(data[5].result as bigint))
+      : 0;
+
   // Parse user position if connected
   const userPosition =
-    address && data?.[4]?.status === "success"
-      ? (data[4].result as any)
+    address && data?.[6]?.status === "success"
+      ? (data[6].result as any)
       : null;
 
   const userShares = userPosition
@@ -124,11 +148,50 @@ export function useInsurance() {
     return Promise.all(payoutPromises);
   };
 
+  // Write contract for claiming payouts
+  const { writeContract, data: claimTxHash, isPending: isClaimPending } = useWriteContract();
+
+  const { isLoading: isClaimConfirming, isSuccess: isClaimConfirmed } =
+    useWaitForTransactionReceipt({ hash: claimTxHash });
+
+  // Refetch after claim
+  useEffect(() => {
+    if (isClaimConfirmed) {
+      refetch();
+
+      // Delayed refetch
+      setTimeout(() => refetch(), 2000);
+      setTimeout(() => refetch(), 5000);
+    }
+  }, [isClaimConfirmed, refetch]);
+
+  // Claim payout function
+  const claimPayout = async (payoutIndex: number) => {
+    if (!address) throw new Error("Wallet not connected");
+
+    writeContract({
+      address: CONTRACTS.InsuranceTranche,
+      abi: InsuranceTrancheABI,
+      functionName: "claimPayout",
+      args: [BigInt(payoutIndex)],
+    });
+  };
+
+  // Get claimable amount for a payout
+  const getClaimableAmount = async (payoutIndex: number) => {
+    if (!address) return 0;
+
+    // This would use readContract but simplified for now
+    return 0;
+  };
+
   return {
     // Pool stats
     poolBalance,
     totalLPShares,
     coverageRatio,
+    stETHBalance,
+    usdcBalance,
 
     // User stats
     userShares,
@@ -142,6 +205,14 @@ export function useInsurance() {
     // Fetchers for detailed data
     fetchAssetDetails,
     fetchPayoutHistory,
+
+    // Claim functions
+    claimPayout,
+    getClaimableAmount,
+    isClaimPending,
+    isClaimConfirming,
+    isClaimConfirmed,
+    claimTxHash,
 
     // Loading states
     isLoading,
@@ -186,5 +257,91 @@ export function useAssetDepegStatus(assets: string[]) {
   return {
     depegStatuses: depegStatuses || [],
     isLoading,
+  };
+}
+
+// Hook to fetch payout details for display
+export function usePayoutDetails(payoutCount: number) {
+  const { address } = useAccount();
+
+  // Fetch details for each payout event
+  const { data, isLoading, refetch } = useReadContracts({
+    contracts: Array.from({ length: payoutCount }).flatMap((_, index) => [
+      // Get payout history
+      {
+        address: CONTRACTS.InsuranceTranche,
+        abi: InsuranceTrancheABI,
+        functionName: "payoutHistory",
+        args: [BigInt(index)],
+      },
+      // Get claimable amount for this user
+      ...(address
+        ? [
+            {
+              address: CONTRACTS.InsuranceTranche,
+              abi: InsuranceTrancheABI,
+              functionName: "getClaimableAmount",
+              args: [address, BigInt(index)],
+            },
+            // Check if already claimed
+            {
+              address: CONTRACTS.InsuranceTranche,
+              abi: InsuranceTrancheABI,
+              functionName: "hasClaimed",
+              args: [BigInt(index), address],
+            },
+          ]
+        : []),
+    ]),
+    query: {
+      enabled: payoutCount > 0,
+    },
+  });
+
+  // Parse payout details
+  const payouts = [];
+  const itemsPerPayout = address ? 3 : 1; // history + claimable + hasClaimed if connected
+
+  for (let i = 0; i < payoutCount; i++) {
+    const baseIndex = i * itemsPerPayout;
+    const historyData = data?.[baseIndex];
+
+    if (historyData?.status === "success") {
+      const [asset, totalPayout, timestamp, price, deviation] = historyData.result as [
+        string,
+        bigint,
+        bigint,
+        bigint,
+        bigint
+      ];
+
+      const claimableData = address ? data?.[baseIndex + 1] : null;
+      const hasClaimedData = address ? data?.[baseIndex + 2] : null;
+
+      const claimableAmount =
+        claimableData?.status === "success"
+          ? Number(formatEther(claimableData.result as bigint))
+          : 0;
+
+      const hasClaimed =
+        hasClaimedData?.status === "success" ? (hasClaimedData.result as boolean) : false;
+
+      payouts.push({
+        index: i,
+        asset,
+        totalPayout: Number(formatEther(totalPayout)),
+        timestamp: Number(timestamp),
+        price: Number(price) / 1e8, // Chainlink 8 decimals
+        deviation: Number(deviation), // basis points
+        claimableAmount,
+        hasClaimed,
+      });
+    }
+  }
+
+  return {
+    payouts,
+    isLoading,
+    refetch,
   };
 }

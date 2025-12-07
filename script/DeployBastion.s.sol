@@ -132,7 +132,7 @@ contract DeployBastion is Script {
 
         // Deploy new PoolManager
         console2.log("Deploying new PoolManager");
-        return address(new PoolManager(500000)); // 500k protocol fee controller
+        return address(new PoolManager(msg.sender)); // msg.sender as initial owner
     }
 
     function deployMockTokens() internal {
@@ -168,7 +168,7 @@ contract DeployBastion is Script {
         bytes memory constructorArgs = abi.encode(_poolManager, _oracle);
 
         (address hookAddress, bytes32 salt) = HookMiner.find(
-            address(this), // deployer (CREATE2 factory)
+            msg.sender, // deployer (CREATE2 factory)
             HOOK_FLAGS,
             type(BastionHook).creationCode,
             constructorArgs
@@ -204,10 +204,11 @@ contract DeployBastion is Script {
         // Initialize pool at 1:1 price (sqrtPriceX96 for 1:1 = 2^96)
         uint160 sqrtPriceX96 = 79228162514264337593543950336; // sqrt(1) * 2^96
 
-        IPoolManager(poolManager).initialize(poolKey, sqrtPriceX96, "");
+        IPoolManager(poolManager).initialize(poolKey, sqrtPriceX96);
 
         console2.log("Pool initialized successfully");
-        console2.log("Pool ID:", uint256(poolKey.toId()));
+        console2.log("Pool ID:");
+        console2.logBytes32(PoolId.unwrap(poolKey.toId()));
     }
 
     function saveDeploymentAddresses() internal {

@@ -1,7 +1,7 @@
 "use client";
 
 import Navigation from "@/components/Navigation";
-import { useInsurance } from "@/hooks/useInsurance";
+import { useInsurance, usePayoutDetails } from "@/hooks/useInsurance";
 import { useAccount } from "wagmi";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { useEffect, useState } from "react";
@@ -13,6 +13,8 @@ export default function Insurance() {
     poolBalance,
     totalLPShares,
     coverageRatio,
+    stETHBalance,
+    usdcBalance,
     userCoverage,
     userShares,
     hasInsurance,
@@ -22,7 +24,15 @@ export default function Insurance() {
     isError,
     fetchAssetDetails,
     fetchPayoutHistory,
+    claimPayout,
+    isClaimPending,
+    isClaimConfirming,
+    isClaimConfirmed,
+    claimTxHash,
   } = useInsurance();
+
+  // Fetch detailed payout information
+  const { payouts, isLoading: isPayoutsLoading, refetch: refetchPayouts } = usePayoutDetails(payoutCount);
 
   const [assetDetails, setAssetDetails] = useState<any[]>([]);
   const [payoutHistory, setPayoutHistory] = useState<any[]>([]);
@@ -39,6 +49,16 @@ export default function Insurance() {
     };
     loadDetails();
   }, [assetCount, payoutCount]);
+
+  // Refetch payout details when claim is confirmed
+  useEffect(() => {
+    if (isClaimConfirmed) {
+      // Refetch payout details with delays
+      setTimeout(() => refetchPayouts(), 1000);
+      setTimeout(() => refetchPayouts(), 3000);
+      setTimeout(() => refetchPayouts(), 6000);
+    }
+  }, [isClaimConfirmed, refetchPayouts]);
 
   // Mock data for recent claims and covered assets (can be replaced with real data later)
   const recentClaims = [
@@ -193,8 +213,19 @@ export default function Insurance() {
                 `$${poolBalance.toFixed(2)}`
               )}
             </p>
-            <p className="text-xs text-gray-500 mt-1">
-              {poolBalance > 0 ? "Available for payouts" : "Awaiting premium deposits"}
+            <div className="mt-3 space-y-1">
+              <p className="text-xs text-gray-400">Collected Premiums:</p>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">stETH:</span>
+                <span className="text-green-400 font-semibold">{stETHBalance.toFixed(4)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">USDC:</span>
+                <span className="text-green-400 font-semibold">{usdcBalance.toFixed(4)}</span>
+              </div>
+            </div>
+            <p className="text-xs text-gray-500 mt-2">
+              {(stETHBalance + usdcBalance) > 0 ? "Available for payouts" : "Awaiting premium deposits"}
             </p>
           </div>
 
@@ -211,6 +242,137 @@ export default function Insurance() {
             )}
           </div>
         </div>
+
+        {/* Claim Payouts Section */}
+        {isConnected && userShares > 0 && payoutCount > 0 && (
+          <div className="mb-8">
+            <div className="glass rounded-2xl border border-white/10 overflow-hidden">
+              <div className="px-8 py-6 border-b border-white/10 bg-gradient-to-r from-green-500/10 to-emerald-500/10">
+                <h2 className="text-2xl font-bold text-white">Claim Insurance Payouts</h2>
+                <p className="text-gray-400 text-sm mt-1">
+                  You have {payoutCount} payout event{payoutCount > 1 ? 's' : ''} available to claim
+                </p>
+              </div>
+              <div className="p-8">
+                <div className="space-y-4">
+                  {/* Map through actual payouts from contract */}
+                  {isPayoutsLoading ? (
+                    <div className="text-center py-8 text-gray-400">Loading payout details...</div>
+                  ) : payouts.length > 0 ? (
+                    payouts.slice(0, 5).map((payout) => (
+                      <div
+                        key={payout.index}
+                        className={`glass-hover rounded-xl p-6 border ${
+                          payout.hasClaimed
+                            ? "border-green-500/30 bg-green-500/5"
+                            : "border-white/10"
+                        } flex items-center justify-between`}
+                      >
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <h3 className="font-bold text-white text-lg">
+                              Payout Event #{payout.index}
+                            </h3>
+                            {payout.hasClaimed && (
+                              <span className="px-3 py-1 bg-green-500/20 text-green-400 text-xs font-semibold rounded-full">
+                                ✓ Claimed
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-sm text-gray-400">
+                            {payout.hasClaimed
+                              ? "You've successfully claimed this payout"
+                              : "Depeg event detected - claim your pro-rata share"}
+                          </p>
+                          <div className="mt-3 flex items-center space-x-4 text-sm">
+                            <span className="text-gray-400">
+                              Your claimable:{" "}
+                              <span className="text-green-400 font-semibold">
+                                {payout.claimableAmount.toFixed(6)} USDC
+                              </span>
+                            </span>
+                            <span className="text-gray-400">•</span>
+                            <span className="text-gray-400">
+                              Deviation:{" "}
+                              <span className="text-orange-400 font-semibold">
+                                {(payout.deviation / 100).toFixed(1)}%
+                              </span>
+                            </span>
+                            <span className="text-gray-400">•</span>
+                            <span className="text-gray-400">
+                              Total pool payout:{" "}
+                              <span className="text-white font-semibold">
+                                {payout.totalPayout.toFixed(2)} USDC
+                              </span>
+                            </span>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => claimPayout(payout.index)}
+                          disabled={payout.hasClaimed || isClaimPending || isClaimConfirming || payout.claimableAmount === 0}
+                          className="px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl font-bold hover:from-green-700 hover:to-emerald-700 transition-all shadow-lg shadow-green-500/20 hover:shadow-green-500/40 disabled:from-gray-600 disabled:to-gray-700 disabled:cursor-not-allowed disabled:shadow-none"
+                        >
+                          {payout.hasClaimed
+                            ? "Claimed"
+                            : isClaimPending || isClaimConfirming
+                            ? "Claiming..."
+                            : payout.claimableAmount === 0
+                            ? "No Claim"
+                            : "Claim Payout"}
+                        </button>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-center py-8 text-gray-400">No payouts available</div>
+                  )}
+                </div>
+
+                {/* Success message */}
+                {isClaimConfirmed && claimTxHash && (
+                  <div className="mt-6 glass rounded-xl p-4 border border-green-500/30 bg-green-500/10 space-y-2">
+                    <p className="text-sm text-green-400 text-center">
+                      ✅ Claim successful! Your payout has been transferred to your wallet.
+                    </p>
+                    <a
+                      href={`https://sepolia.basescan.org/tx/${claimTxHash}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block text-center text-xs text-blue-400 hover:text-blue-300 underline"
+                    >
+                      View on BaseScan →
+                    </a>
+                  </div>
+                )}
+
+                {/* Processing message */}
+                {(isClaimPending || isClaimConfirming) && (
+                  <div className="mt-6 glass rounded-xl p-4 border border-blue-500/30 bg-blue-500/10">
+                    <p className="text-sm text-blue-400 text-center">
+                      Processing claim... Transaction is being confirmed on the blockchain.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* No claims message */}
+        {isConnected && userShares > 0 && payoutCount === 0 && (
+          <div className="mb-8">
+            <div className="glass rounded-2xl p-6 border border-blue-500/30 bg-blue-500/10">
+              <div className="flex items-center space-x-3">
+                <span className="text-3xl">✓</span>
+                <div>
+                  <h3 className="font-bold text-blue-400 mb-1">No Claims Available</h3>
+                  <p className="text-sm text-gray-300">
+                    You have {userShares.toFixed(4)} LP shares protected. Claims will appear here when depeg events occur.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Covered Assets & Claims */}

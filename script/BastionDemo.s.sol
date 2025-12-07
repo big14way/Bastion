@@ -144,7 +144,7 @@ contract BastionDemo is Script {
 
         // Deploy pool manager
         console.log("\nDeploying Uniswap v4 Pool Manager...");
-        poolManager = new PoolManager(500000); // Protocol fee controller
+        poolManager = new PoolManager(msg.sender); // msg.sender as initial owner
         console.log("  Pool Manager:", address(poolManager));
 
         // Deploy Bastion hook

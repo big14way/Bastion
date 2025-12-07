@@ -7,3 +7,4 @@ export { useDynamicFee } from "./useDynamicFee";
 export { useDemoMode } from "./useDemoMode";
 export type { DemoState, DemoStep } from "./useDemoMode";
 export { useVault } from "./useVault";
+export { useSwap } from "./useSwap";

@@ -10,6 +10,7 @@ export default function Navigation() {
   const navItems = [
     { href: "/", label: "Dashboard", icon: "📊" },
     { href: "/vault", label: "Vault", icon: "🔐" },
+    { href: "/swap", label: "Swap", icon: "🔄" },
     { href: "/borrow", label: "Borrow", icon: "💰" },
     { href: "/insurance", label: "Insurance", icon: "🛡️" },
   ];

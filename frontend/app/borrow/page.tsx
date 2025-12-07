@@ -38,6 +38,8 @@ export default function Borrow() {
     availableLiquidity,
     isBorrowConfirmed,
     isRepayConfirmed,
+    borrowTxHash,
+    repayTxHash,
     refetch,
   } = useLending();
 
@@ -53,14 +55,31 @@ export default function Borrow() {
     if (isBorrowConfirmed && borrowAmount) {
       setLastBorrowAmount(borrowAmount);
       setShowBorrowSuccess(true);
+
+      // Immediate refetch
       refetch();
 
-      // Hide success message after 5 seconds
-      const timer = setTimeout(() => {
-        setShowBorrowSuccess(false);
+      // Delayed refetch for blockchain state propagation
+      const refetchTimer1 = setTimeout(() => {
+        console.log("Delayed refetch after borrow...");
+        refetch();
+      }, 2000);
+
+      const refetchTimer2 = setTimeout(() => {
+        console.log("Final refetch after borrow...");
+        refetch();
       }, 5000);
 
-      return () => clearTimeout(timer);
+      // Hide success message after 10 seconds
+      const hideTimer = setTimeout(() => {
+        setShowBorrowSuccess(false);
+      }, 10000);
+
+      return () => {
+        clearTimeout(refetchTimer1);
+        clearTimeout(refetchTimer2);
+        clearTimeout(hideTimer);
+      };
     }
   }, [isBorrowConfirmed, borrowAmount, refetch]);
 
@@ -68,14 +87,31 @@ export default function Borrow() {
     if (isRepayConfirmed && repayAmount) {
       setLastRepayAmount(repayAmount);
       setShowRepaySuccess(true);
+
+      // Immediate refetch
       refetch();
 
-      // Hide success message after 5 seconds
-      const timer = setTimeout(() => {
-        setShowRepaySuccess(false);
+      // Delayed refetch for blockchain state propagation
+      const refetchTimer1 = setTimeout(() => {
+        console.log("Delayed refetch after repay...");
+        refetch();
+      }, 2000);
+
+      const refetchTimer2 = setTimeout(() => {
+        console.log("Final refetch after repay...");
+        refetch();
       }, 5000);
 
-      return () => clearTimeout(timer);
+      // Hide success message after 10 seconds
+      const hideTimer = setTimeout(() => {
+        setShowRepaySuccess(false);
+      }, 10000);
+
+      return () => {
+        clearTimeout(refetchTimer1);
+        clearTimeout(refetchTimer2);
+        clearTimeout(hideTimer);
+      };
     }
   }, [isRepayConfirmed, repayAmount, refetch]);
 
@@ -131,6 +167,16 @@ export default function Borrow() {
                 <p className="text-gray-300">
                   You have successfully borrowed ${parseFloat(lastBorrowAmount).toFixed(2)} USDC
                 </p>
+                {borrowTxHash && (
+                  <a
+                    href={`https://sepolia.basescan.org/tx/${borrowTxHash}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-blue-400 hover:text-blue-300 underline mt-1 inline-block"
+                  >
+                    View on BaseScan →
+                  </a>
+                )}
               </div>
             </div>
           </div>
@@ -147,6 +193,16 @@ export default function Borrow() {
                 <p className="text-gray-300">
                   You have successfully repaid ${parseFloat(lastRepayAmount).toFixed(2)} USDC
                 </p>
+                {repayTxHash && (
+                  <a
+                    href={`https://sepolia.basescan.org/tx/${repayTxHash}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-blue-400 hover:text-blue-300 underline mt-1 inline-block"
+                  >
+                    View on BaseScan →
+                  </a>
+                )}
               </div>
             </div>
           </div>
@@ -297,6 +353,13 @@ export default function Borrow() {
                     No borrowing capacity available.
                   </p>
                 )}
+                {isBorrowing && (
+                  <div className="glass rounded-xl p-4 border border-purple-500/30 bg-purple-500/10">
+                    <p className="text-sm text-purple-400 text-center">
+                      Processing borrow... Transaction is being confirmed on the blockchain.
+                    </p>
+                  </div>
+                )}
               </form>
               )}
 
@@ -384,6 +447,13 @@ export default function Borrow() {
                     <p className="text-xs text-gray-500 text-center">
                       You have no outstanding debt to repay
                     </p>
+                  )}
+                  {isRepaying && (
+                    <div className="glass rounded-xl p-4 border border-blue-500/30 bg-blue-500/10">
+                      <p className="text-sm text-blue-400 text-center">
+                        {needsApproval ? "Approving USDC spending... Please confirm in your wallet." : "Processing repayment... Transaction is being confirmed on the blockchain."}
+                      </p>
+                    </div>
                   )}
                 </form>
               )}
