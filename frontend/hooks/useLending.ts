@@ -49,12 +49,6 @@ export function useLending() {
           {
             address: CONTRACTS.LendingModule,
             abi: LendingModuleABI,
-            functionName: "LTV_RATIO",
-            args: [],
-          },
-          {
-            address: CONTRACTS.LendingModule,
-            abi: LendingModuleABI,
             functionName: "totalLendingPool",
             args: [],
           },
@@ -119,25 +113,22 @@ export function useLending() {
       ? Number(data[4].result) / 100
       : 5.0;
 
-  // Max LTV
-  const maxLTV =
-    data?.[5]?.status === "success"
-      ? Number(data[5].result) / 100
-      : 70.0;
+  // Max LTV (hardcoded to 70%)
+  const maxLTV = 70.0;
 
   // Pool statistics
   const totalPool =
+    data?.[5]?.status === "success"
+      ? Number(formatEther(data[5].result as bigint))
+      : 0;
+
+  const totalBorrowed =
     data?.[6]?.status === "success"
       ? Number(formatEther(data[6].result as bigint))
       : 0;
 
-  const totalBorrowed =
-    data?.[7]?.status === "success"
-      ? Number(formatEther(data[7].result as bigint))
-      : 0;
-
   // USDC allowance
-  const allowanceRaw = data?.[8]?.status === "success" ? data[8].result as bigint : 0n;
+  const allowanceRaw = data?.[7]?.status === "success" ? data[7].result as bigint : 0n;
 
   // Calculate current LTV
   const currentLTV = collateralValue > 0 ? (currentDebt / collateralValue) * 100 : 0;
