@@ -4,7 +4,7 @@
 
 Bastion is a decentralized lending protocol built on Base Sepolia that combines EigenLayer's Active Validation Services (AVS), automated insurance protection, and intelligent basket management to create a secure, efficient DeFi lending experience.
 
-[![Live Demo](https://img.shields.io/badge/demo-live-green)](https://bastion-protocol.vercel.app)
+[![Live Demo](https://img.shields.io/badge/demo-live-green)](https://bastion-protocol-three.vercel.app)
 [![License](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 [![Network](https://img.shields.io/badge/network-Base%20Sepolia-orange)](https://sepolia.basescan.org)
 
@@ -287,8 +287,8 @@ This project is licensed under the MIT License - see the [LICENSE](./LICENSE) fi
 
 ## 🔗 Links
 
-- **Live Demo**: Coming soon
-- **GitHub**: [github.com/big14way/bastion-protocol](https://github.com/big14way/bastion-protocol)
+- **Live Demo**: [https://bastion-protocol-three.vercel.app](https://bastion-protocol-three.vercel.app)
+- **GitHub**: [github.com/big14way/Bastion](https://github.com/big14way/Bastion)
 - **Base Sepolia Explorer**: [sepolia.basescan.org](https://sepolia.basescan.org)
 
 ---
