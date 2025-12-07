@@ -57,7 +57,7 @@ export function useInsurance() {
             },
           ]
         : []),
-    ],
+    ] as any,
   });
 
   // Parse the basic data
