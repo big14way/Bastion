@@ -8,7 +8,7 @@ import { useEffect, useState } from "react";
 import { CONTRACTS } from "@/lib/contracts/addresses";
 
 export default function Insurance() {
-  const { isConnected, address } = useAccount();
+  const { isConnected } = useAccount();
   const {
     poolBalance,
     totalLPShares,
