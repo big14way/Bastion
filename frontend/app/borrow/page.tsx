@@ -6,7 +6,7 @@ import { useLending } from "@/hooks/useLending";
 import { useAccount } from "wagmi";
 
 export default function Borrow() {
-  const { address, isConnected } = useAccount();
+  const { isConnected } = useAccount();
   const [activeTab, setActiveTab] = useState<"borrow" | "repay">("borrow");
   const [showBorrowSuccess, setShowBorrowSuccess] = useState(false);
   const [showRepaySuccess, setShowRepaySuccess] = useState(false);
