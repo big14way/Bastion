@@ -317,6 +317,60 @@ This project is licensed under the MIT License - see the [LICENSE](./LICENSE) fi
 
 ---
 
+## 🤝 Partner Integrations
+
+Bastion integrates with multiple protocols to deliver a secure, automated lending experience:
+
+### Uniswap v4 Hooks
+- **Integration**: Custom hook implementation for dynamic fees and automated basket rebalancing
+- **Location**: [`src/BastionHook.sol`](src/BastionHook.sol)
+- **Usage**:
+  - `beforeSwap()` - Dynamic fee adjustment based on volatility (lines 263-286)
+  - `afterSwap()` - Basket rebalancing trigger (lines 294-320)
+  - `afterAddLiquidity()` - LP collateral registration (lines 330-341)
+  - `afterDonate()` - Rebasing token reward handling (lines 387-414)
+- **Key Features**: Volatility-based fees (0.05%-1.00%), automated rebalancing, LP collateral tracking
+
+### EigenLayer AVS
+- **Integration**: Active Validation Services for depeg detection and verification
+- **Location**: [`src/avs/BastionTaskManager.sol`](src/avs/BastionTaskManager.sol)
+- **Usage**:
+  - AVS operators verify depeg events before insurance payouts (lines 945-998 in BastionHook.sol)
+  - Consensus-based validation ensures accuracy
+  - Slashing protection for malicious behavior
+- **Key Features**: Decentralized verification, operator staking, automated task creation
+
+### Chainlink Oracles
+- **Integration**: Price feeds for volatility calculation and depeg detection
+- **Location**: [`src/interfaces/IVolatilityOracle.sol`](src/interfaces/IVolatilityOracle.sol)
+- **Usage**:
+  - Real-time volatility data for dynamic fee tiers (line 270 in BastionHook.sol)
+  - Basket weight adjustment based on price movements
+  - Depeg threshold monitoring (20% deviation)
+- **Key Features**: Reliable price data, multi-asset support (stETH, cbETH, rETH, USDe)
+
+### OpenZeppelin Contracts
+- **Integration**: Security libraries and base contracts
+- **Location**: Imported throughout codebase
+- **Usage**:
+  - `SafeERC20` for secure token transfers (line 19 in BastionHook.sol)
+  - `ReentrancyGuard` in [`src/BastionVault.sol`](src/BastionVault.sol)
+  - `Ownable` and access control patterns
+- **Key Features**: Battle-tested security, gas optimization, standard implementations
+
+### Base L2
+- **Integration**: Deployed on Base Sepolia testnet
+- **Location**: All contracts deployed at addresses listed in README
+- **Usage**:
+  - Low-cost transactions for frequent rebalancing
+  - Fast finality for insurance payouts
+  - Ethereum-compatible environment
+- **Key Features**: Reduced gas costs, 2-second block times, Ethereum security
+
+**Note**: All integrations are functional and deployed on Base Sepolia testnet.
+
+---
+
 ## 🏆 Acknowledgments
 
 Built with:
@@ -324,6 +378,7 @@ Built with:
 - [Chainlink](https://chain.link/) for price feeds
 - [OpenZeppelin](https://openzeppelin.com/) for secure contracts
 - [Base](https://base.org/) for L2 scalability
+- [Uniswap v4](https://uniswap.org/) for hook infrastructure
 
 ---
 
